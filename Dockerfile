@@ -26,8 +26,15 @@
 # START: Base Image simliar to registry.access.redhat.com/ubi8/s2i-core:latest ############################
 ###########################################################################################################
 
-#FROM registry.stage.redhat.io/ubi8/ubi:8.7
-FROM docker.io/rockylinux:8.7
+ARG VER="8.7.0"
+ARG ARCH="x86_64"
+ARG OS="linux"
+ARG PKG="base"
+ARG OS_VERSION="8.7"
+# ARG SRC_IMAGE="registry.stage.redhat.io/ubi8/ubi:${OS_VERSION}"
+ARG SRC_IMAGE="docker.io/rockylinux:${OS_VERSION}"
+
+FROM "${SRC_IMAGE}"
 
 #
 # Base on https://catalog.redhat.com/software/containers/ubi8/s2i-core/5c83967add19c77a15918c27?container-tabs=dockerfile
@@ -48,6 +55,11 @@ LABEL summary="$SUMMARY" \
       name="ubi8/s2i-core" \
       version="1" \
       com.redhat.license_terms="https://www.redhat.com/en/about/red-hat-end-user-license-agreements#UBI"
+
+LABEL ORG="ArkCase LLC"
+LABEL MAINTAINER="ArkCase Support <support@arkcase.com>"
+LABEL APP="Base"
+LABEL VERSION="${VER}"
 
 ENV \
     # DEPRECATED: Use above LABEL instead, because this will be removed in future versions.
