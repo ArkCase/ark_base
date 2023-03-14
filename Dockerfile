@@ -4,12 +4,11 @@
 #
 # How to build:
 #
-# docker build -t 345280441424.dkr.ecr.ap-south-1.amazonaws.com/ark_base:latest .
-# docker push 345280441424.dkr.ecr.ap-south-1.amazonaws.com/ark_base:latest
+# docker build -t ${BASE_REGISTRY}/arkcase/base:latest .
 # 
 # How to run: (Docker)
 #
-# docker run --name ark_base -d 345280441424.dkr.ecr.ap-south-1.amazonaws.com/ark_base:latest sleep infinity
+# docker run --name ark_base -d ${BASE_REGISTRY}/arkcase/base:latest sleep infinity
 # docker exec -it ark_base /bin/bash
 # docker stop ark_base
 # docker rm ark_base
@@ -26,11 +25,11 @@
 # START: Base Image simliar to registry.access.redhat.com/ubi8/s2i-core:latest ############################
 ###########################################################################################################
 
-ARG VER="8.7.0"
+ARG OS_VERSION="8.7"
+ARG VER="${OS_VERSION}.0"
 ARG ARCH="x86_64"
 ARG OS="linux"
 ARG PKG="base"
-ARG OS_VERSION="8.7"
 # ARG SRC_IMAGE="registry.stage.redhat.io/ubi8/ubi:${OS_VERSION}"
 ARG SRC_IMAGE="docker.io/rockylinux:${OS_VERSION}"
 
