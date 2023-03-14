@@ -5,7 +5,7 @@ metadata:
 spec:
   containers:
     - name: base
-      image: 345280441424.dkr.ecr.ap-south-1.amazonaws.com/ark_base:latest
+      image: arkcase/base:latest
       imagePullPolicy: Always
       command: [ "sleep", "infinity" ]
   imagePullSecrets:
