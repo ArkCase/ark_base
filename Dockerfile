@@ -4,11 +4,11 @@
 #
 # How to build:
 #
-# docker build -t ${BASE_REGISTRY}/arkcase/base:latest .
+# docker build -t arkcase/base:latest .
 # 
 # How to run: (Docker)
 #
-# docker run --name ark_base -d ${BASE_REGISTRY}/arkcase/base:latest sleep infinity
+# docker run --name ark_base -d arkcase/base:latest sleep infinity
 # docker exec -it ark_base /bin/bash
 # docker stop ark_base
 # docker rm ark_base
@@ -30,10 +30,18 @@ ARG VER="${OS_VERSION}.0"
 ARG ARCH="x86_64"
 ARG OS="linux"
 ARG PKG="base"
-# ARG SRC_IMAGE="registry.stage.redhat.io/ubi8/ubi:${OS_VERSION}"
-ARG SRC_IMAGE="docker.io/rockylinux:${OS_VERSION}"
+# ARG SRC_IMAGE="registry.stage.redhat.io/ubi8/ubi"
+ARG SRC_IMAGE="docker.io/rockylinux"
+ARG PLATFORM="el8"
 
-FROM "${SRC_IMAGE}"
+FROM "${SRC_IMAGE}:${OS_VERSION}"
+
+ARG OS_VERSION
+ARG VER
+ARG ARCH
+ARG OS
+ARG PKG
+ARG PLATFORM
 
 #
 # Base on https://catalog.redhat.com/software/containers/ubi8/s2i-core/5c83967add19c77a15918c27?container-tabs=dockerfile
@@ -44,9 +52,9 @@ ENV SUMMARY="Base image which allows using of source-to-image." \
 with all the tools needed to use source-to-image functionality while keeping \
 the image size as small as possible."
 
-LABEL summary="$SUMMARY" \
-      description="$DESCRIPTION" \
-      io.k8s.description="$DESCRIPTION" \
+LABEL summary="${SUMMARY}" \
+      description="${DESCRIPTION}" \
+      io.k8s.description="${DESCRIPTION}" \
       io.k8s.display-name="s2i core" \
       io.openshift.s2i.scripts-url=image:///usr/libexec/s2i \
       io.s2i.scripts-url=image:///usr/libexec/s2i \
@@ -61,15 +69,12 @@ LABEL APP="Base"
 LABEL VERSION="${VER}"
 
 ENV \
-    # DEPRECATED: Use above LABEL instead, because this will be removed in future versions.
-    STI_SCRIPTS_URL=image:///usr/libexec/s2i \
-    # Path to be used in other layers to place s2i scripts into
-    STI_SCRIPTS_PATH=/usr/libexec/s2i \
-    APP_ROOT=/opt/app-root \
-    # The $HOME is not set by default, but some applications needs this variable
-    HOME=/opt/app-root/src \
-    PATH=/opt/app-root/src/bin:/opt/app-root/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-    PLATFORM="el8"
+    STI_SCRIPTS_URL="image:///usr/libexec/s2i" \
+    STI_SCRIPTS_PATH="/usr/libexec/s2i" \
+    APP_ROOT="/opt/app-root" \
+    HOME="/opt/app-root/src" \
+    PATH="/opt/app-root/src/bin:/opt/app-root/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+    PLATFORM="${PLATFORM}"
 
 # This is the list of basic dependencies that all language container image can
 # consume.
@@ -77,41 +82,40 @@ ENV \
 # application runtime execution.
 # TODO: Use better UID and GID values
 
-RUN INSTALL_PKGS="bsdtar \
-  findutils \
-  groff-base \
-  glibc-locale-source \
-  glibc-langpack-en \
-  gettext \
-  rsync \
-  scl-utils \
-  tar \
-  unzip \
-  xz \
-  yum" && \
-  mkdir -p ${HOME}/.pki/nssdb && \
-  chown -R 1001:0 ${HOME}/.pki && \
-  yum install -y --setopt=tsflags=nodocs $INSTALL_PKGS && \
-  rpm -V $INSTALL_PKGS && \
-  yum -y clean all --enablerepo='*'
+RUN mkdir -p "${HOME}/.pki/nssdb" && \
+    chown -R 1001:0 "${HOME}/.pki" && \
+    yum -y install --setopt=tsflags=nodocs \
+        bsdtar \
+        findutils \
+        gettext \
+        glibc-langpack-en \
+        glibc-locale-source \
+        groff-base \
+        rsync \
+        scl-utils \
+        tar \
+        unzip \
+        xz \
+    && \
+    yum -y update && \
+    yum -y clean all --enablerepo='*'
 
 # Copy extra files to the image.
 COPY ./core/root/ /
 
-# Directory with the sources is set as the working directory so all STI scripts
-# can execute relative to this path.
-WORKDIR ${HOME}
-
-ENTRYPOINT ["container-entrypoint"]
-CMD ["base-usage"]
-
 # Reset permissions of modified directories and add default user
 RUN rpm-file-permissions && \
-  useradd -u 1001 -r -g 0 -d ${HOME} -s /sbin/nologin \
-      -c "Default Application User" default && \
-  chown -R 1001:0 ${APP_ROOT}
+    useradd -u 1001 -r -g 0 -d "${HOME}" -s /sbin/nologin \
+        -c "Default Application User" default && \
+    chown -R 1001:0 ${APP_ROOT}
+
+# Directory with the sources is set as the working directory so all STI scripts
+# can execute relative to this path.
+WORKDIR "${HOME}"
+
+ENTRYPOINT [ "container-entrypoint" ]
+CMD [ "base-usage" ]
 
 ###########################################################################################################
 #   END: Base Image simliar to simliar to registry.access.redhat.com/ubi8/s2i-core:latest #################
 ###########################################################################################################
-
