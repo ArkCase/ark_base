@@ -44,8 +44,9 @@ ARG PKG
 ARG PLATFORM
 
 #
-# Base on https://catalog.redhat.com/software/containers/ubi8/s2i-core/5c83967add19c77a15918c27?container-tabs=dockerfile
+# Based on https://catalog.redhat.com/software/containers/ubi8/s2i-core/5c83967add19c77a15918c27?container-tabs=dockerfile
 # ( Click Cancel whe it prompts you to login )
+#
 
 ENV SUMMARY="Base image which allows using of source-to-image." \
     DESCRIPTION="The s2i-core image provides any images layered on top of it \
@@ -91,10 +92,12 @@ RUN mkdir -p "${HOME}/.pki/nssdb" && \
         glibc-langpack-en \
         glibc-locale-source \
         groff-base \
+        jq \
         rsync \
         scl-utils \
         tar \
         unzip \
+        wget \
         xz \
     && \
     yum -y update && \
