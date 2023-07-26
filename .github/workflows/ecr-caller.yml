@@ -5,6 +5,14 @@ on:
       - main
       - develop
 
+  # Make this workflow run daily to keep this image up-to-date
+  # with updates (is this something we want?)
+  schedule:
+    - cron: "0 0 * * *"
+
+  # Enable running it manually
+  workflow_dispatch: {}
+
 jobs:
   call-workflow-in-ecr-template:
     uses: arkcase/github-action-templates/.github/workflows/ecr-publish.yml@main
