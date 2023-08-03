@@ -27,6 +27,13 @@ cleanup() {
 	[ -v TARGET_TMP_DIR ] && [ -n "${TARGET_TMP_DIR}" ] && [ -d "${TARGET_TMP_DIR}" ] && rm -rf "${TARGET_TMP_DIR}" &>/dev/null
 }
 
+download() {
+	local URL="${1}"
+	local TGT="${2}"
+	# The artifact is there, so pull it into the destination
+	curl -kL --fail -s -o "${TGT}" "${URL}" || fail "Failed to download the artifact from [${URL}] into [${TGT}]"
+}
+
 usage() {
 	{
 		echo -e "usage: ${BASH_SOURCE:-${0}} operation artifact targetDir"
@@ -47,8 +54,8 @@ usage() {
 [ ${#} -eq 3 ] || usage
 
 OPERATION="${1,,}"
-case "${OPERATION,,}" in
-	copy | extract | extractdir | extract-dir ) OPERATION="${OPERATION,,}" ;;
+case "${OPERATION}" in
+	copy | extract | extractdir | extract-dir ) ;;
 	* ) fail "Invalid operation [${OPERATION}]" ;;
 esac
 
@@ -77,9 +84,6 @@ SOURCE_URL="${DEPL_URL}/${ARTIFACT}"
 HTTP_CODE="$(curl -kL -s --head -o /dev/null -w "%{http_code}" "${SOURCE_URL}")"
 [ ${HTTP_CODE} -lt 400 ] || fail "The artifact [${ARTIFACT}] is not available for deployment (HTTP CODE = ${HTTP_CODE})"
 
-# The artifact is there, so pull it into the destination
-curl -kL --fail -s -o "${TARGET_TMP_FILE}" "${SOURCE_URL}"
-
 # Same with the version and the checksum, but it's OK if these aren't there b/c
 # we can come up with defaults
 
@@ -93,11 +97,14 @@ SUM=""
 ${FORCE_HASHES} || SUM="$(curl -kL -s --fail "${DEPL_URL}/${ARTIFACT}.sum" 2>/dev/null || true)"
 
 # If the sum is invalid, or we're requesting local checksum computation, we do just that
-if [[ ! "${SUM,,}" =~ ^[0-9a-f]{64}$ ]] ; then
+if [[ ! "${SUM}" =~ ^[0-9a-f]{64}$ ]] ; then
 	${FORCE_HASHES} || say "Failed to find the cached checksum for [${ARTIFACT}], or its contents are invalid. Computing it directly..."
-	read SUM REST < <(sha256sum "${TARGET_TMP_FILE}")
-	[[ "${SUM,,}" =~ ^[0-9a-f]{64}$ ]] || fail "Failed to compute the sha256 checksum for [${ARTIFACT}]"
+	download "${SOURCE_URL}" "${TARGET_TMP_FILE}"
+	read SUM REST < <(sha256sum "${TARGET_TMP_FILE}" | tr '[:upper:]' '[:lower:]')
+	[[ "${SUM}" =~ ^[0-9a-f]{64}$ ]] || fail "Failed to compute the sha256 checksum for [${ARTIFACT}]"
 fi
+
+# Always the checksum in lowercase
 SUM="${SUM,,}"
 
 # This is the file track marker where we'll track the deployment status
@@ -115,10 +122,11 @@ if [ -e "${MARKER_FILE}" ] ; then
 		REST=""
 		IFS="|" read OLD_DATE OLD_VER OLD_SUM OLD_ARTIFACT < <(sed -e '/^\s*#.*$/d' -e '/^\s*$/d' < "${MARKER_FILE}" | egrep "\|[0-9a-fA-F]{64}\|${ARTIFACT}$" | tail -1)
 		[ -n "${OLD_SUM}" ] && EXISTING_LOADED="true"
+		OLD_SUM="${OLD_SUM,,}"
 	fi
 
 	if "${EXISTING_LOADED}" ; then
-		if [ "${SUM,,}" == "${OLD_SUM,,}" ] ; then
+		if [ "${SUM}" == "${OLD_SUM}" ] ; then
 			say "The artifact [${ARTIFACT}] appears to already be deployed into [${TARGET_DIR}] since ${OLD_DATE} (version = ${OLD_VER}, verified by checksum)."
 			exit 0
 		fi
@@ -130,7 +138,11 @@ else
 	say "Version tracking hasn't yet begun for ${TARGET_DIR} (the marker file [${MARKER_FILE}] is missing)"
 fi
 
-case "${OPERATION,,}" in
+# We delay the download as much as possible, to avoid downloading if the checksum
+# matches and all that (i.e. if we don't need to deploy, we avoid downloading)
+[ -f "${TARGET_TMP_FILE}" ] || download "${SOURCE_URL}" "${TARGET_TMP_FILE}"
+
+case "${OPERATION}" in
 	extract )
 		unzip -o -d "${TARGET_DIR}" "${TARGET_TMP_FILE}"
 		;;
@@ -151,5 +163,5 @@ case "${OPERATION,,}" in
 esac
 
 # Add the marker record for this version
-echo -e "$(date -u -Ins)|${NEW_VER}|${SUM,,}|${ARTIFACT}" >> "${MARKER_FILE}"
+echo -e "$(date -u -Ins)|${NEW_VER}|${SUM}|${ARTIFACT}" >> "${MARKER_FILE}"
 exit 0
