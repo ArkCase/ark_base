@@ -96,6 +96,7 @@ RUN mkdir -p "${HOME}/.pki/nssdb" && \
         rsync \
         scl-utils \
         tar \
+        tzdata-java \
         unzip \
         wget \
         xz \
