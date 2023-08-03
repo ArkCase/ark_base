@@ -1,17 +1,10 @@
-name: ECR Build Caller Workflow
+name: ecr-build
 on:
+  workflow_dispatch: {}
   push:
     branches:
       - main
       - develop
-
-  # Make this workflow run daily to keep this image up-to-date
-  # with updates (is this something we want?)
-  schedule:
-    - cron: "0 0 * * *"
-
-  # Enable running it manually
-  workflow_dispatch: {}
 
 jobs:
   call-workflow-in-ecr-template:
