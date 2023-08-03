@@ -113,8 +113,8 @@ RUN rpm-file-permissions && \
         -c "Default Application User" default && \
     chown -R 1001:0 ${APP_ROOT}
 
-COPY --chown=root:root "deploy" "/usr/local/bin"
-RUN chmod a=rx "/usr/local/bin/deploy"
+COPY --chown=root:root "deploy-artifact" "/usr/local/bin"
+RUN chmod a=rx "/usr/local/bin/deploy-artifact"
 
 # Directory with the sources is set as the working directory so all STI scripts
 # can execute relative to this path.
