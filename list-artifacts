@@ -49,4 +49,5 @@ STATUS="$(jq -r .rc <<< "${JSON}")"
 jq -r ".data.files[] | .name" <<< "${JSON}" | \
 	egrep -vi '\.ver' | \
 	egrep -vi '\.sum' | \
-	sed -e "s;^;/${TARGET_PATH}/;g"
+	sed -e "s;^;/${TARGET_PATH}/;g" | \
+	sort -u
