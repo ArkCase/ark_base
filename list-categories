@@ -31,6 +31,14 @@ TARGET_PATH="${1:-""}"
 # Replace consecutive slashes
 TARGET_PATH="$(echo -n "${TARGET_PATH}" | sed -e 's;/+;/;g')"
 
+# URL-escape all path components
+IFS="/" read -a PARTS <<< "${TARGET_PATH}"
+TARGET_PATH=""
+for P in "${PARTS[@]}" ; do
+    [ -z "${TARGET_PATH}" ] || TARGET_PATH+="/"
+    TARGET_PATH+="$(echo -n "${P}" | jq -sRr @uri)"
+done
+
 # List the artifacts or directories in the given URL
 URL="${DEPL_URL}/api/1/${TARGET_PATH}"
 

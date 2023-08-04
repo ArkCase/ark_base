@@ -65,7 +65,18 @@ ARTIFACT="${2}"
 
 # Sanitize the artifact name (single slashes, remove leading slash)
 ARTIFACT="$(echo -n "${ARTIFACT}" | sed -e 's;/+;/;g' -e 's;^/;;g')"
+
+# Pick the last component, which will be used locally
 ARTIFACT_NAME="${ARTIFACT##*/}"
+
+# Sanitize artifact components, split by slashes, to ensure that every
+# component is properly URL-escaped
+IFS="/" read -a PARTS <<< "${ARTIFACT}"
+ARTIFACT=""
+for P in "${PARTS[@]}" ; do
+	[ -z "${ARTIFACT}" ] || ARTIFACT+="/"
+	ARTIFACT+="$(echo -n "${P}" | jq -sRr @uri)"
+done
 
 TARGET_DIR="${3}"
 [ -e "${TARGET_DIR}" ] || fail "The target directory [${TARGET_DIR}] does not exist"
