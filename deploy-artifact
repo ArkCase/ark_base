@@ -133,7 +133,9 @@ if [ -e "${MARKER_FILE}" ] ; then
 		# We explicitly don't call sort b/c we want to get the last record on the list,
 		# regardless of its contents
 		REST=""
-		IFS="|" read OLD_DATE OLD_VER OLD_SUM OLD_ARTIFACT < <(sed -e '/^\s*#.*$/d' -e '/^\s*$/d' < "${MARKER_FILE}" | egrep "\|[0-9a-fA-F]{64}\|${ARTIFACT}$" | tail -1)
+		# We use "|| true" at the end b/c if the output is empty then we have nothing to read
+		# and this will cause the script to exit
+		IFS="|" read OLD_DATE OLD_VER OLD_SUM OLD_ARTIFACT < <(sed -e '/^\s*#.*$/d' -e '/^\s*$/d' < "${MARKER_FILE}" | egrep "\|[0-9a-fA-F]{64}\|${ARTIFACT}$" | tail -1) || true
 		[ -n "${OLD_SUM}" ] && EXISTING_LOADED="true"
 		OLD_SUM="${OLD_SUM,,}"
 	fi
