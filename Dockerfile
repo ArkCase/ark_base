@@ -93,6 +93,8 @@ RUN mkdir -p "${HOME}/.pki/nssdb" && \
         glibc-locale-source \
         groff-base \
         jq \
+        python3-pyyaml \
+        python3-pip \
         rsync \
         scl-utils \
         tar \
@@ -102,7 +104,8 @@ RUN mkdir -p "${HOME}/.pki/nssdb" && \
         xz \
     && \
     yum -y update && \
-    yum -y clean all --enablerepo='*'
+    yum -y clean all --enablerepo='*' && \
+    update-alternatives --set python /usr/bin/python3
 
 # Copy extra files to the image.
 COPY ./core/root/ /
@@ -112,16 +115,6 @@ RUN rpm-file-permissions && \
     useradd -u 1001 -r -g 0 -d "${HOME}" -s /sbin/nologin \
         -c "Default Application User" default && \
     chown -R 1001:0 ${APP_ROOT}
-
-COPY --chown=root:root \
-    "list-artifacts" \
-    "list-categories" \
-    "deploy-artifact" \
-    "/usr/local/bin/"
-RUN chmod a=rx \
-        "/usr/local/bin/list-artifacts" \
-        "/usr/local/bin/list-categories" \
-        "/usr/local/bin/deploy-artifact"
 
 # Directory with the sources is set as the working directory so all STI scripts
 # can execute relative to this path.
