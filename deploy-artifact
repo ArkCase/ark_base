@@ -81,13 +81,15 @@ TARGET_TMP_FILE="${TARGET_TMP_DIR}/${ARTIFACT_NAME}"
 
 # Check for artifact availability
 SOURCE_URL="${DEPL_URL}/${ARTIFACT}"
-HTTP_CODE="$(curl -kL -s --head -o /dev/null -w "%{http_code}" "${SOURCE_URL}")"
+CHECK_URL="${DEPL_URL}/api/1/${ARTIFACT}?cmd=info"
+HTTP_CODE="$(curl -kL -s -o /dev/null -w "%{http_code}" "${CHECK_URL}")"
 [ ${HTTP_CODE} -lt 400 ] || fail "The artifact [${ARTIFACT}] is not available for deployment (HTTP CODE = ${HTTP_CODE})"
 
 # Same with the version and the checksum, but it's OK if these aren't there b/c
 # we can come up with defaults
 
 NEW_VER="$(curl -kL -s --fail "${DEPL_URL}/${ARTIFACT}.ver" 2>/dev/null || true)"
+grep -q '<!DOCTYPE html>' <<< "${NEW_VER}" && NEW_VER=""
 [ -n "${NEW_VER}" ] || NEW_VER="(unknown)"
 
 # By default, no checksum...
