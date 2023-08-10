@@ -33,6 +33,8 @@ ARG PKG="base"
 # ARG SRC_IMAGE="registry.stage.redhat.io/ubi8/ubi"
 ARG SRC_IMAGE="docker.io/rockylinux"
 ARG PLATFORM="el8"
+ARG GUCCI_VER="1.6.10"
+ARG GUCCI_SRC="https://github.com/noqcks/gucci/releases/download/${GUCCI_VER}/gucci-v${GUCCI_VER}-linux-amd64"
 
 FROM "${SRC_IMAGE}:${OS_VERSION}"
 
@@ -42,6 +44,7 @@ ARG ARCH
 ARG OS
 ARG PKG
 ARG PLATFORM
+ARG GUCCI_SRC
 
 #
 # Based on https://catalog.redhat.com/software/containers/ubi8/s2i-core/5c83967add19c77a15918c27?container-tabs=dockerfile
@@ -115,6 +118,10 @@ RUN rpm-file-permissions && \
     useradd -u 1001 -r -g 0 -d "${HOME}" -s /sbin/nologin \
         -c "Default Application User" default && \
     chown -R 1001:0 ${APP_ROOT}
+
+RUN curl -kL --fail -o "/usr/local/bin/gucci" "${GUCCI_SRC}" && \
+    chown root:root "/usr/local/bin/gucci" && \
+    chmod u=rwx,go=rx "/usr/local/bin/gucci"
 
 # Directory with the sources is set as the working directory so all STI scripts
 # can execute relative to this path.
