@@ -147,6 +147,7 @@ download_chain() {
 	return ${RC}
 }
 
+[ -v ACM_GROUP ] || fail "The ACM_GROUP environment variable is REQUIRED"
 [ -v SSL_DIR ] || SSL_DIR="/.ssl"
 [ -v SSL_TRUSTS_DIR ] || SSL_TRUSTS_DIR="/.trusts"
 [ -v ANCHORS ] || ANCHORS="/etc/pki/ca-trust/source/anchors"
@@ -432,12 +433,14 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			say "\t✅ Ready!"
 		done
 	fi
-
-	find "${SSL_DIR}" -type f -exec chmod -R a=r '{}' ';'
-	chmod -R a=rX "${SSL_DIR}"
 else
 	err "Can't find the provisioner password file at [${ACME_PASSWORD_FILE}], did not generate any new certificates"
 fi
+
+say "👉 Setting tight permissions for the certificate directory..."
+chown -R "root:${ACM_GROUP}" "${SSL_DIR}"
+chmod -R ug=rX,o= "${SSL_DIR}"
+say "\t✅ Done!"
 
 say "👉 Updating the trusted certificates"
 /usr/bin/chown -R root:root "${ANCHORS}"
