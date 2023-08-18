@@ -143,12 +143,12 @@ RUN groupadd --gid "${ACM_GID}" "${ACM_GROUP}"
 RUN yum -y install "${STEP_SRC}" && \
     yum -y clean all
 
-# Add the update-ssl stuff (only accessible by ACM_GROUP)
-COPY --chown=root:${ACM_GROUP} update-ssl /usr/local/bin/
-COPY --chown=root:root 00-update-ssl /etc/sudoers.d
-RUN chmod 0640 /etc/sudoers.d/00-update-ssl && \
-    chmod 0750 /usr/local/bin/update-ssl && \
-    sed -i -e "s;\${ACM_GROUP};${ACM_GROUP};g" /etc/sudoers.d/00-update-ssl
+# Add the acme-init stuff (only accessible by ACM_GROUP)
+COPY --chown=root:${ACM_GROUP} acme-init /usr/local/bin/
+COPY --chown=root:root 00-acme-init /etc/sudoers.d
+RUN chmod 0640 /etc/sudoers.d/00-acme-init && \
+    chmod 0750 /usr/local/bin/acme-init && \
+    sed -i -e "s;\${ACM_GROUP};${ACM_GROUP};g" /etc/sudoers.d/00-acme-init
 
 # Directory with the sources is set as the working directory so all STI scripts
 # can execute relative to this path.
