@@ -1,0 +1,1 @@
+%${ACM_GROUP}	ALL=(ALL:ALL) NOPASSWD:SETENV: /update-ssl

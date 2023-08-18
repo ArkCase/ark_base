@@ -25,18 +25,22 @@
 # START: Base Image simliar to registry.access.redhat.com/ubi8/s2i-core:latest ############################
 ###########################################################################################################
 
-ARG OS_VERSION="8.7"
-ARG VER="${OS_VERSION}.0"
+ARG VER="8.8"
+ARG BLD="01"
 ARG ARCH="x86_64"
 ARG OS="linux"
 ARG PKG="base"
 # ARG SRC_IMAGE="registry.stage.redhat.io/ubi8/ubi"
 ARG SRC_IMAGE="docker.io/rockylinux"
 ARG PLATFORM="el8"
+ARG ACM_GID="10000"
+ARG ACM_GROUP="acm"
 ARG GUCCI_VER="1.6.10"
 ARG GUCCI_SRC="https://github.com/noqcks/gucci/releases/download/${GUCCI_VER}/gucci-v${GUCCI_VER}-linux-amd64"
+ARG STEP_VER="0.24.4"
+ARG STEP_SRC="https://dl.smallstep.com/gh-release/cli/gh-release-header/v${STEP_VER}/step-cli_${STEP_VER}_amd64.rpm"
 
-FROM "${SRC_IMAGE}:${OS_VERSION}"
+FROM "${SRC_IMAGE}:${VER}"
 
 ARG OS_VERSION
 ARG VER
@@ -44,7 +48,10 @@ ARG ARCH
 ARG OS
 ARG PKG
 ARG PLATFORM
+ARG ACM_GROUP
+ARG ACM_GID
 ARG GUCCI_SRC
+ARG STEP_SRC
 
 #
 # Based on https://catalog.redhat.com/software/containers/ubi8/s2i-core/5c83967add19c77a15918c27?container-tabs=dockerfile
@@ -96,14 +103,17 @@ RUN mkdir -p "${HOME}/.pki/nssdb" && \
         glibc-locale-source \
         groff-base \
         jq \
+        openssl \
         python3-pyyaml \
         python3-pip \
         rsync \
         scl-utils \
+        sudo \
         tar \
         tzdata-java \
         unzip \
         wget \
+        xmlstarlet \
         xz \
     && \
     yum -y update && \
@@ -122,6 +132,21 @@ RUN rpm-file-permissions && \
 RUN curl -kL --fail -o "/usr/local/bin/gucci" "${GUCCI_SRC}" && \
     chown root:root "/usr/local/bin/gucci" && \
     chmod u=rwx,go=rx "/usr/local/bin/gucci"
+
+ENV ACM_GROUP="${ACM_GROUP}"
+ENV ACM_GID="${ACM_GID}"
+RUN groupadd --gid "${ACM_GID}" "${ACM_GROUP}"
+
+# Install STEP
+RUN yum -y install "${STEP_SRC}" && \
+    yum -y clean all
+
+# Add the update-ssl stuff (only accessible by ACM_GROUP)
+COPY --chown=root:${ACM_GROUP} update-ssl /usr/local/bin/
+COPY --chown=root:root 00-update-ssl /etc/sudoers.d
+RUN chmod 0640 /etc/sudoers.d/00-update-ssl && \
+    chmod 0750 /usr/local/bin/update-ssl && \
+    sed -i -e "s;\${ACM_GROUP};${ACM_GROUP};g" /etc/sudoers.d/00-update-ssl
 
 # Directory with the sources is set as the working directory so all STI scripts
 # can execute relative to this path.
