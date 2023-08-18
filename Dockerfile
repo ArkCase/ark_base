@@ -82,6 +82,7 @@ LABEL VERSION="${VER}"
 ENV \
     STI_SCRIPTS_URL="image:///usr/libexec/s2i" \
     STI_SCRIPTS_PATH="/usr/libexec/s2i" \
+    BASE_DIR="/app" \
     APP_ROOT="/opt/app-root" \
     HOME="/opt/app-root/src" \
     PATH="/opt/app-root/src/bin:/opt/app-root/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
@@ -127,7 +128,8 @@ COPY ./core/root/ /
 RUN rpm-file-permissions && \
     useradd -u 1001 -r -g 0 -d "${HOME}" -s /sbin/nologin \
         -c "Default Application User" default && \
-    chown -R 1001:0 ${APP_ROOT}
+    chown -R 1001:0 ${APP_ROOT} && \
+    mkdir -p "${BASE_DIR}"
 
 RUN curl -kL --fail -o "/usr/local/bin/gucci" "${GUCCI_SRC}" && \
     chown root:root "/usr/local/bin/gucci" && \
