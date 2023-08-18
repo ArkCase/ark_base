@@ -46,6 +46,21 @@ is_valid_url() {
 	return 0
 }
 
+is_variable_true() {
+	local V="${1}"
+	[ -v "${V}" ] || return 1
+	case "${!V,,}" in
+		true | t | yes | y | on ) return 0 ;;
+	esac
+	return 1
+}
+
+is_supported() {
+	local V="${1}"
+	[ -n "${V}" ] || return 1
+	is_variable_true "ACME_SUPPORT_${V}"
+}
+
 render_password() {
 	local V="$(/usr/bin/dd if=/dev/urandom bs=1K count=16 2>/dev/null | /usr/bin/base64 -w 0)"
 	echo -n "${V:0:16}"
@@ -363,6 +378,32 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	/usr/bin/cp -f "${ACME_INT_CA_ANCHOR}" "${SSL_DIR}/acme-int-ca.pem"
 	say "\t✅ Done!"
 
+	if is_supported TOMCAT ; then
+		say "👉 Rendering the CA chains for Tomcat..."
+		cat \
+			"${ACME_INT_CA_ANCHOR}" \
+			"${ACME_ROOT_CA_ANCHOR}" \
+			> "${SSL_DIR}/acme-ca-chain-tomcat.pem"
+		say "\t✅ Done!"
+	fi
+
+	if is_supported HAPROXY ; then
+		say "👉 Rendering the certificate files for HAProxy..."
+		cat \
+			"${SSL_DIR}/cert.pem" \
+			"${ACME_INT_CA_ANCHOR}" \
+			"${ACME_ROOT_CA_ANCHOR}" \
+			"${SSL_DIR}/key.pem" \
+			> "${SSL_DIR}/acme-chain-haproxy.pem"
+		cat \
+			"${SSL_DIR}/cert.pem" \
+			"${ACME_INT_CA_ANCHOR}" \
+			"${ACME_ROOT_CA_ANCHOR}" \
+			"${SSL_DIR}/encrypted-key.pem" \
+			> "${SSL_DIR}/acme-chain-haproxy-enc.pem"
+		say "\t✅ Done!"
+	fi
+
 	say "👉 Rendering a PKCS12 Keystore with the new certificate & key..."
 	"${OPENSSL}" pkcs12 \
 		-export \
@@ -378,12 +419,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	KEYTOOL="$(type -P keytool 2>/dev/null)" || true
 	if [ -n "${KEYTOOL}" ] && [ -f "${KEYTOOL}" ] && [ -r "${KEYTOOL}" ] && [ -x "${KEYTOOL}" ] ; then
 		for STORETYPE in jks jceks ; do
-			V="SUPPORT_${STORETYPE^^}"
-			[ -v "${V}" ] || continue
-			case "${!V,,}" in
-				true | t | yes | y | on ) ;;
-				* ) continue ;;
-			esac
+			is_supported "${STORETYPE^^}" || continue
 			say "👉 Creating a ${STORETYPE^^} Java Keystore with the new certificate & key..." 
 			"${KEYTOOL}" \
 				-importkeystore \
