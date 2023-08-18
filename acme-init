@@ -395,19 +395,19 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	fi
 
 	if is_supported HAPROXY ; then
+		say "👉 Rendering the CA chains for HAProxy..."
+		cat \
+			"${ACME_INT_CA_ANCHOR}" \
+			"${ACME_ROOT_CA_ANCHOR}" \
+			> "${SSL_DIR}/acme-ca-chain-haproxy-ca.pem"
+		say "\t✅ Done!"
+
 		say "👉 Rendering the certificate files for HAProxy..."
 		cat \
 			"${SSL_DIR}/cert.pem" \
-			"${ACME_INT_CA_ANCHOR}" \
-			"${ACME_ROOT_CA_ANCHOR}" \
+			"${SSL_DIR}/acme-ca-chain-haproxy-ca.pem" \
 			"${SSL_DIR}/key.pem" \
 			> "${SSL_DIR}/acme-chain-haproxy.pem"
-		cat \
-			"${SSL_DIR}/cert.pem" \
-			"${ACME_INT_CA_ANCHOR}" \
-			"${ACME_ROOT_CA_ANCHOR}" \
-			"${SSL_DIR}/encrypted-key.pem" \
-			> "${SSL_DIR}/acme-chain-haproxy-enc.pem"
 		say "\t✅ Done!"
 	fi
 
@@ -417,7 +417,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 		-in "${SSL_DIR}/cert.pem" \
 		-inkey "${SSL_DIR}/key.pem" \
 		-passin file:<(/usr/bin/yes "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" | head -2) \
-		-name "${FQDN}" \
+		-name "acme" \
 		-out "${SSL_DIR}/keystore.pkcs12" \
 		-passout file:<(/usr/bin/yes "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" | head -2)
 	say "\t✅ Ready!"
@@ -454,7 +454,7 @@ chmod -R ug=rX,o= "${SSL_DIR}"
 # can easily be group-readable since they're all encrypted
 # one way or another, or are meant to be publicly-accessible
 FILES=()
-for n in "key.pem" "keystore.pass" ; do
+for n in "key.pem" "keystore.pass" "acme-chain-haproxy.pem" ; do
 	[ -f "${SSL_DIR}/${n}" ] && FILES+=("${SSL_DIR}/${n}")
 done
 if [ ${#FILES[@]} -gt 0 ] ; then
