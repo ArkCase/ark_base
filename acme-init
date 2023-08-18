@@ -438,8 +438,26 @@ else
 fi
 
 say "👉 Setting tight permissions for the certificate directory..."
+
+# By default, owned by root but readable by ACM_GROUP
 chown -R "root:${ACM_GROUP}" "${SSL_DIR}"
 chmod -R ug=rX,o= "${SSL_DIR}"
+
+# Secure the most sensitive files so they're only readable
+# by the user who will be consuming them ... the other files
+# can easily be group-readable since they're all encrypted
+# one way or another, or are meant to be publicly-accessible
+FILES=()
+for n in "key.pem" "keystore.pass" ; do
+	[ -f "${SSL_DIR}/${n}" ] && FILES+=("${SSL_DIR}/${n}")
+done
+if [ ${#FILES[@]} -gt 0 ] ; then
+	KEY_OWNER="root:root"
+	[ -v SUDO_USER ] && KEY_OWNER="${SUDO_USER}:${ACM_GROUP}"
+	chown "${KEY_OWNER}" "${FILES[@]}"
+	chmod -R u=r,go= "${FILES[@]}"
+fi
+
 say "\t✅ Done!"
 
 say "👉 Updating the trusted certificates"
