@@ -461,7 +461,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 
 	# By default, owned by root but readable by ACM_GROUP
 	chown -R "root:${ACM_GROUP}" "${SSL_DIR}"
-	chmod -R ug=rX,o= "${SSL_DIR}"
+	chmod -R ug=rX,o=X "${SSL_DIR}"
 
 	# Secure the most sensitive files so they're only readable
 	# by the user who will be consuming them ... the other files
