@@ -347,7 +347,11 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 		)
 	done < <(echo -e "${SERVICE}\n${SERVICE_NAME}" | sort -u | sed -e '/^\s*$/d')
 
-	SAN+=(--san "${POD}")
+	SAN+=(
+		--san "${POD}"
+		--san "localhost.localdomain"
+		--san "localhost"
+	)
 
 	[ -d "${SSL_DIR}" ] || mkdir -p "${SSL_DIR}" || fail "Failed to create the SSL certificate directory [${SSL_DIR}]"
 
