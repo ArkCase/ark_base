@@ -461,11 +461,11 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 
 	# By default, owned by root but readable by ACM_GROUP
 	chown -R "root:${ACM_GROUP}" "${SSL_DIR}"
-	chmod -R ug=rX,o=X "${SSL_DIR}"
+	chmod -R a=rX "${SSL_DIR}"
 
 	# Secure the most sensitive files so they're only readable
 	# by the user who will be consuming them ... the other files
-	# can easily be group-readable since they're all encrypted
+	# can easily be world-readable since they're all encrypted
 	# one way or another, or are meant to be publicly-accessible
 	if [ ${#SECURE_FILES[@]} -gt 0 ] ; then
 		KEY_OWNER="root"
