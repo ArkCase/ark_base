@@ -433,6 +433,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 		-export \
 		-in "${SSL_DIR}/cert.pem" \
 		-inkey "${SSL_DIR}/cert.key" \
+		-certfile "${SSL_DIR}/ca-chain.pem" \
 		-passin file:<(/usr/bin/yes "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" | head -2) \
 		-name "acme" \
 		-out "${SSL_DIR}/keystore.pkcs12" \
