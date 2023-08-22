@@ -46,6 +46,28 @@ is_valid_url() {
 	return 0
 }
 
+validate_ip() {
+   [ ${#} -ge 1 ] || return 1
+   local PARTS=()
+   for IP in "${@}" ; do
+	   IFS="." PARTS=(${IP})
+	   # Is it made of 4 parts separated by dots?
+	   [ ${#PARTS[@]} -eq 4 ] || return 1
+	   for p in "${PARTS[@]}" ; do
+		   # Is it a 1-3 digit number?
+		   [[ "${p}" =~ ^[0-9]{1,3}$ ]] || return 1
+		   # Don't allow leading zeros
+		   [[ "${p}" =~ ^0[0-9]{1,2}$ ]] && return 1
+		   # Is it in [0..255]?
+		   [ ${p} -ge 0 ] || return 1
+		   [ ${p} -le 255 ] || return 1
+	   done
+	   echo "${IP}"
+   done
+   return 0
+}
+
+
 is_variable_true() {
 	local V="${1}"
 	[ -v "${V}" ] || return 1
@@ -142,8 +164,8 @@ download_from_port() {
 download_chain() {
 	local CERT_BASE_NAME="${1}"
 	local URL="${2}"
-	OUT="$("${CURL}" -kL --fail --connect-timeout 5 -o >(install_chain "${CERT_BASE_NAME}") "${URL}" 2>&1)"
-	RC=${?}
+	local RC=0
+	OUT="$("${CURL}" -kL --fail --silent --show-error --connect-timeout 5 -o >(install_chain "${CERT_BASE_NAME}") "${URL}" 2>&1)" || RC=${?}
 	[ ${RC} -ne 0 ] && err "Failed to download the certificates from [${URL}] (rc=${RC}):\n${OUT}"
 	return ${RC}
 }
@@ -189,7 +211,7 @@ START="$(/usr/bin/date +%s)"
 say "👉 Fetching the root CA certificate from [${ACME_HOST}]"
 while true ; do
 	# TODO: What's the standard way to do this in ACME-land?
-	OUT="$("${CURL}" -kL --fail -o "${ACME_ROOT_CA_ANCHOR}" "${ACME_URL}/roots.pem" 2>&1)" && break
+	OUT="$("${CURL}" -kL --fail --silent --show-error -o "${ACME_ROOT_CA_ANCHOR}" "${ACME_URL}/roots.pem" 2>&1)" && break
 	say "Failed to get the step root CA (rc=${?}):\n${OUT}"
 	NOW="$(/usr/bin/date +%s)"
 	[ $(( NOW - START )) -ge ${MAX_WAIT} ] && fail "Timed out trying to reach the CA issuer at [${ACME_URL}]"
@@ -335,6 +357,11 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			SAN+=(--san "${ACME_SERVICE_NAME}.${NAMESPACE}")
 		fi
 		SAN+=(--san "${ACME_SERVICE_NAME}")
+
+		SVC_VAR="${ACME_SERVICE_NAME^^}_SERVICE_HOST"
+		if [ -v "${SVC_VAR}" ] ; then
+			SVC_IP="$(validate_ip "${!SVC_VAR}")" && [ "${SVC_IP}" != "127.0.01" ] && SAN+=(--san "${SVC_IP}")
+		fi
 	fi
 
 	if [ -n "${SERVICE}" ] ; then
@@ -355,7 +382,18 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			--san "${POD}.${SERVICE}"
 			--san "${SERVICE}"
 		)
+
+		SVC_VAR="${SERVICE^^}_SERVICE_HOST"
+		if [ -v "${SVC_VAR}" ] ; then
+			SVC_IP="$(validate_ip "${!SVC_VAR}")" && [ "${SVC_IP}" != "127.0.01" ] && SAN+=(--san "${SVC_IP}")
+		fi
 	fi
+
+	if [ -v POD_IP ] ; then
+		POD_IP="$(validate_ip "${POD_IP}")" && [ "${POD_IP}" != "127.0.01" ] && SAN+=(--san "${POD_IP}")
+	fi
+
+	# TODO: Use the ${SERVICE_NAME}_SERVICE_HOST as the service IP
 
 	# The least specific values
 	SAN+=(
