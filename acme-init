@@ -212,7 +212,7 @@ say "👉 Fetching the root CA certificate from [${ACME_HOST}]"
 while true ; do
 	# TODO: What's the standard way to do this in ACME-land?
 	OUT="$("${CURL}" -kL --fail --silent --show-error -o "${ACME_ROOT_CA_ANCHOR}" "${ACME_URL}/roots.pem" 2>&1)" && break
-	say "Failed to get the step root CA (rc=${?}):\n${OUT}"
+	err "Failed to get the step root CA (rc=${?}):\n${OUT}"
 	NOW="$(/usr/bin/date +%s)"
 	[ $(( NOW - START )) -ge ${MAX_WAIT} ] && fail "Timed out trying to reach the CA issuer at [${ACME_URL}]"
 	sleep 5 || fail "Sleep interrupted trying to wait for [${ACME_URL}] - cannot continue"
@@ -486,11 +486,12 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			say "👉 Creating a ${STORETYPE^^} Java Keystore with the new certificate & key..." 
 			"${KEYTOOL}" \
 				-importkeystore \
-				-srckeystore "${SSL_DIR}/keystore.pkcs12"  \
-				-srcstorepass "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")"  \
+				-srckeystore "${SSL_DIR}/keystore.pkcs12" \
+				-srcstorepass "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" \
 				-srcstoretype PKCS12 \
 				-destkeystore "${SSL_DIR}/keystore.${STORETYPE}" \
 				-deststorepass "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" \
+				-destkeypass "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" \
 				-deststoretype "${STORETYPE}"
 			say "\t✅ Ready!"
 		done
