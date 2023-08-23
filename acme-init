@@ -468,43 +468,64 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	SECURE_FILES+=("${SSL_DIR}/haproxy-cert.pem")
 	say "\t✅ Done!"
 
-	say "👉 Rendering a PKCS12 Keystore with the new certificate & key..."
-	"${OPENSSL}" pkcs12 \
-		-export \
-		-in "${SSL_DIR}/cert.pem" \
-		-inkey "${SSL_DIR}/cert.key" \
-		-passin file:<(/usr/bin/yes "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" | head -2) \
-		-name "acme" \
-		-out "${SSL_DIR}/keystore.pkcs12" \
-		-passout file:<(/usr/bin/yes "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" | head -2)
-	say "\t✅ Ready!"
-
 	# Find the Java keytool, if it's installed
 	KEYTOOL="$(type -P keytool 2>/dev/null)" || true
 	if [ -n "${KEYTOOL}" ] && [ -f "${KEYTOOL}" ] && [ -r "${KEYTOOL}" ] && [ -x "${KEYTOOL}" ] ; then
+		say "👉 Rendering a PKCS12 Keystore with the new certificate & key..."
+
+		# First, create the base keystore
+		PKCS12="${SSL_DIR}/keystore.pkcs12"
+		"${OPENSSL}" pkcs12 \
+			-export \
+			-in "${SSL_DIR}/cert.pem" \
+			-inkey "${SSL_DIR}/cert.key" \
+			-passin file:<(/usr/bin/yes "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" | head -2) \
+			-name "acme" \
+			-out "${PKCS12}" \
+			-passout file:<(/usr/bin/yes "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" | head -2)
+
+		# Then, append the additional CAs into the newly-created keystore
+		for CERT in ca-int.pem ca-root.pem ; do
+			say "\t👉 Adding ${CERT}..."
+			"${KEYTOOL}" \
+				-importcert \
+				-noprompt \
+				-keystore "${PKCS12}" \
+				-storepass "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" \
+				-storetype "PKCS12" \
+				-alias "acme-${CERT%.*}" \
+				-file "${SSL_DIR}/${CERT}"
+		done
+		say "\t✅ Ready!"
+
+		# Finally, if other keystore types are required, use them
 		for STORETYPE in jks jceks ; do
 			is_supported "${STORETYPE^^}" || continue
 			say "👉 Creating a ${STORETYPE^^} Java Keystore with the new certificate & key..." 
 			STOREFILE="${SSL_DIR}/keystore.${STORETYPE}"
+			STOREPASS="$(<"${ACME_KEYSTORE_PASSWORD_FILE}")"
 			rm -f "${STOREFILE}" &>/dev/null || true
-			# 1) create the new keystore with just the certificate and key
+
+			# First, copy only the key and cert we want
 			"${KEYTOOL}" \
 				-importkeystore \
-				-srckeystore "${SSL_DIR}/keystore.pkcs12" \
-				-srcstorepass "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" \
+				-srcalias "acme" \
+				-srckeystore "${PKCS12}" \
+				-srcstorepass "${STOREPASS}" \
 				-srcstoretype PKCS12 \
 				-destkeystore "${STOREFILE}" \
-				-deststorepass "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" \
-				-destkeypass "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" \
+				-deststorepass "${STOREPASS}" \
+				-destkeypass "${STOREPASS}" \
 				-deststoretype "${STORETYPE}"
-			# 2) append the additional CAs into the newly-created keystore
+
+			# Then, append the additional CAs into the newly-created keystore
 			for CERT in ca-int.pem ca-root.pem ; do
 				say "\t👉 Adding ${CERT}..."
 				"${KEYTOOL}" \
 					-importcert \
 					-noprompt \
 					-keystore "${STOREFILE}" \
-					-storepass "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" \
+					-storepass "${STOREPASS}" \
 					-storetype "${STORETYPE}" \
 					-alias "acme-${CERT%.*}" \
 					-file "${SSL_DIR}/${CERT}"
