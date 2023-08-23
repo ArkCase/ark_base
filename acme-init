@@ -438,6 +438,8 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 		--kty RSA \
 		--provisioner-password-file "${ACME_PASSWORD_FILE}" \
 		--password-file="${ACME_KEYSTORE_PASSWORD_FILE}"
+	say "👉 Removing extra stuff from the certificate..."
+	/usr/bin/sed -i -e '/^-\+END CERTIFICATE-\+$/q' "${SSL_DIR}/cert.pem"
 	say "\t✅ Certificate ready!"
 
 	say "👉 Creating an encrypted version of the key..."
@@ -471,7 +473,6 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 		-export \
 		-in "${SSL_DIR}/cert.pem" \
 		-inkey "${SSL_DIR}/cert.key" \
-		-certfile "${SSL_DIR}/ca-chain.pem" \
 		-passin file:<(/usr/bin/yes "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" | head -2) \
 		-name "acme" \
 		-out "${SSL_DIR}/keystore.pkcs12" \
@@ -484,15 +485,30 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 		for STORETYPE in jks jceks ; do
 			is_supported "${STORETYPE^^}" || continue
 			say "👉 Creating a ${STORETYPE^^} Java Keystore with the new certificate & key..." 
+			STOREFILE="${SSL_DIR}/keystore.${STORETYPE}"
+			rm -f "${STOREFILE}" &>/dev/null || true
+			# 1) create the new keystore with just the certificate and key
 			"${KEYTOOL}" \
 				-importkeystore \
 				-srckeystore "${SSL_DIR}/keystore.pkcs12" \
 				-srcstorepass "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" \
 				-srcstoretype PKCS12 \
-				-destkeystore "${SSL_DIR}/keystore.${STORETYPE}" \
+				-destkeystore "${STOREFILE}" \
 				-deststorepass "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" \
 				-destkeypass "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" \
 				-deststoretype "${STORETYPE}"
+			# 2) append the additional CAs into the newly-created keystore
+			for CERT in ca-int.pem ca-root.pem ; do
+				say "\t👉 Adding ${CERT}..."
+				"${KEYTOOL}" \
+					-importcert \
+					-noprompt \
+					-keystore "${STOREFILE}" \
+					-storepass "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" \
+					-storetype "${STORETYPE}" \
+					-alias "acme-${CERT%.*}" \
+					-file "${SSL_DIR}/${CERT}"
+			done
 			say "\t✅ Ready!"
 		done
 	fi
