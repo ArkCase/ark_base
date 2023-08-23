@@ -1,0 +1,35 @@
+#!/bin/bash
+
+# 1) are all the base files there?
+#
+#		* keystore.pass
+#		* cert.key.enc
+#		* cert.pem
+#		* ca-int.pem
+#		* ca-root.pem
+#
+# if any file is missing or 0-length, the installation is bad
+
+#
+# 2) Are the files congruent?
+#
+#		* Does the password decrypt the cert.key?
+#		* Does the cert.key match cert.pem?
+#		* Is ca-int.pem signed by ca-root.pem?
+#		* Is cert.pem signed by ca-int.pem?
+#
+# if any of these tests fails, the installation is bad
+
+#
+# If all the above test succeeded, then rebuild all the extra
+# files that we use for different things based on the above
+# core 5 files:
+#
+#		* Render keystore.pkcs12 
+#		* Render ca-chain.pem
+#		* Render cert.key
+#		* Render haproxy-cert.pem
+#		* Render keystore.jks (if applicable)
+#		* Render keystore.jceks (if applicable)
+#
+# Done
