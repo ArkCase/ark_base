@@ -26,7 +26,7 @@
 ###########################################################################################################
 
 ARG VER="8.8"
-ARG BLD="01"
+ARG BLD="02"
 ARG ARCH="x86_64"
 ARG OS="linux"
 ARG PKG="base"
@@ -144,10 +144,10 @@ RUN yum -y install "${STEP_SRC}" && \
     yum -y clean all
 
 # Add the acme-init stuff (only accessible by ACM_GROUP)
-COPY --chown=root:${ACM_GROUP} acme-init /usr/local/bin/
+COPY --chown=root:${ACM_GROUP} acme-init acme-validate /usr/local/bin/
 COPY --chown=root:root 00-acme-init /etc/sudoers.d
 RUN chmod 0640 /etc/sudoers.d/00-acme-init && \
-    chmod 0750 /usr/local/bin/acme-init && \
+    chmod 0750 /usr/local/bin/acme-init /usr/local/bin/acme-validate && \
     sed -i -e "s;\${ACM_GROUP};${ACM_GROUP};g" /etc/sudoers.d/00-acme-init
 
 # Directory with the sources is set as the working directory so all STI scripts
