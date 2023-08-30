@@ -25,8 +25,8 @@
 # START: Base Image simliar to registry.access.redhat.com/ubi8/s2i-core:latest ############################
 ###########################################################################################################
 
-ARG VER="8.8"
-ARG BLD="02"
+ARG VER="8"
+ARG BLD="01"
 ARG ARCH="x86_64"
 ARG OS="linux"
 ARG PKG="base"
