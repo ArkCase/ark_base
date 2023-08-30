@@ -1,5 +1,5 @@
 #!/bin/bash
-[ "$(/usr/bin/id -u)" -eq 0 ] || exec /usr/bin/sudo --non-interactive --preserve-env "${0}" "${@}"
+[ "$(/usr/bin/id -u)" -eq 0 ] || exec /usr/bin/sudo --non-interactive --preserve-env "PATH=${PATH}" "${0}" "${@}"
 
 # Just for safety's sake
 cd /
@@ -211,7 +211,7 @@ SHA256SUM="$(type -P sha256sum 2>/dev/null)" || fail "sha256sum is not installed
 #
 ################################################################################
 GENERATE_NEW_CERTIFICATES="false"
-acme-validate &>/dev/null || GENERATE_NEW_CERTIFICATES="true"
+acme-validate || GENERATE_NEW_CERTIFICATES="true"
 
 if "${GENERATE_NEW_CERTIFICATES}" ; then
 	################################################################################
