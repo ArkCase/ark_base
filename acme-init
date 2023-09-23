@@ -216,7 +216,7 @@ SHA256SUM="$(type -P sha256sum 2>/dev/null)" || fail "sha256sum is not installed
 #
 ################################################################################
 GENERATE_NEW_CERTIFICATES="false"
-acme-validate || GENERATE_NEW_CERTIFICATES="true"
+/usr/local/bin/acme-validate || GENERATE_NEW_CERTIFICATES="true"
 
 if "${GENERATE_NEW_CERTIFICATES}" ; then
 	################################################################################
@@ -479,7 +479,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 		say "👉 Copying the root and intermediate CAs into the target directory..."
 		/usr/bin/cp -f "${ACME_ROOT_CA_ANCHOR}" "${SSL_DIR}/ca-root.pem"
 		/usr/bin/cp -f "${ACME_INT_CA_ANCHOR}" "${SSL_DIR}/ca-int.pem"
-		cat \
+		/usr/bin/cat \
 			"${ACME_INT_CA_ANCHOR}" \
 			"${ACME_ROOT_CA_ANCHOR}" \
 			> "${SSL_DIR}/ca-chain.pem"
@@ -493,7 +493,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	fi
 
 	say "👉 Rendering the certificate files for HAProxy..."
-	cat \
+	/usr/bin/cat \
 		"${SSL_DIR}/cert.pem" \
 		"${SSL_DIR}/ca-chain.pem" \
 		"${SSL_DIR}/cert.key" \
@@ -570,8 +570,8 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	say "👉 Setting tight permissions for the generated data..."
 
 	# By default, owned by root but readable by ACM_GROUP
-	chown -R "root:${ACM_GROUP}" "${SSL_DIR}"
-	chmod -R a=rX "${SSL_DIR}"
+	/usr/bin/chown -R "root:${ACM_GROUP}" "${SSL_DIR}"
+	/usr/bin/chmod -R a=rX "${SSL_DIR}"
 
 	# Secure the most sensitive files so they're only readable
 	# by the user who will be consuming them ... the other files
@@ -580,8 +580,8 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	if [ ${#SECURE_FILES[@]} -gt 0 ] ; then
 		KEY_OWNER="root"
 		[ -v SUDO_USER ] && KEY_OWNER="${SUDO_USER}"
-		chown "${KEY_OWNER}:${ACM_GROUP}" "${SECURE_FILES[@]}"
-		chmod -R u=r,go= "${SECURE_FILES[@]}"
+		/usr/bin/chown "${KEY_OWNER}:${ACM_GROUP}" "${SECURE_FILES[@]}"
+		/usr/bin/chmod -R u=r,go= "${SECURE_FILES[@]}"
 	fi
 
 	say "\t✅ Done!"
