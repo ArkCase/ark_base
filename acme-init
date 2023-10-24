@@ -446,8 +446,8 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			# Allow the use of ACME_KEYSTORE_PASSWORD to set the password. This isn't
 			# particularly secure, but it may be required in some instances where the
 			# pod needs to know the password beforehand (i.e. b/c Helm needs to know it)
-			if [ -v ACM_KEYSTORE_PASSWORD ] ; then
-				[ -n "${ACME_KEYSTORE_PASSWORD}" ] || fail "The variable ACM_KEYSTORE_PASSWORD may not be empty"
+			if [ -v ACME_KEYSTORE_PASSWORD ] ; then
+				[ -n "${ACME_KEYSTORE_PASSWORD}" ] || fail "The variable ACME_KEYSTORE_PASSWORD may not be empty"
 				echo -n "${ACME_KEYSTORE_PASSWORD}" > "${ACME_KEYSTORE_PASSWORD_FILE}" || fail "Failed to render the password file at [${ACME_KEYSTORE_PASSWORD_FILE}] with the password given in ACME_KEYSTORE_PASSWORD"
 			else
 				# We weren't given a password, so just render a random one
