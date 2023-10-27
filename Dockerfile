@@ -26,12 +26,9 @@
 ###########################################################################################################
 
 ARG VER="8"
-ARG BLD="02"
 ARG ARCH="x86_64"
 ARG OS="linux"
 ARG PKG="base"
-# ARG SRC_IMAGE="registry.stage.redhat.io/ubi8/ubi"
-ARG SRC_IMAGE="docker.io/rockylinux"
 ARG PLATFORM="el8"
 ARG ACM_GID="10000"
 ARG ACM_GROUP="acm"
@@ -40,7 +37,11 @@ ARG GUCCI_SRC="https://github.com/noqcks/gucci/releases/download/${GUCCI_VER}/gu
 ARG STEP_VER="0.24.4"
 ARG STEP_SRC="https://dl.smallstep.com/gh-release/cli/gh-release-header/v${STEP_VER}/step-cli_${STEP_VER}_amd64.rpm"
 
-FROM "${SRC_IMAGE}:${VER}"
+# ARG BASE_REPO="registry.stage.redhat.io/ubi8/ubi"
+ARG BASE_REPO="docker.io/rockylinux"
+ARG BASE_IMG="${BASE_REPO}:${VER}"
+
+FROM "${BASE_IMG}"
 
 ARG OS_VERSION
 ARG VER
