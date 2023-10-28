@@ -1,11 +1,6 @@
 name: ecr-build
 on:
-  workflow_dispatch:
-    inputs:
-      revision:
-        description: "The revision number to use for construction (computed from the Dockerfile if not provided)"
-        required: false
-        type: string
+  workflow_dispatch: {}
   push:
     branches:
       - main
@@ -14,8 +9,6 @@ on:
 jobs:
   call-workflow-in-ecr-template:
     uses: arkcase/github-action-templates/.github/workflows/ecr-publish.yml@main
-    with:
-      revision: ${{ inputs.revision }}
     secrets:
       ECR_AWS_REGION: ${{ secrets.ECR_AWS_REGION }}
       ECR_AWS_ORG_ID: ${{ secrets.ECR_AWS_ORG_ID }}
