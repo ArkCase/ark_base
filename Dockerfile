@@ -97,6 +97,7 @@ ENV \
 
 RUN mkdir -p "${HOME}/.pki/nssdb" && \
     chown -R 1001:0 "${HOME}/.pki" && \
+    yum -y update && \
     yum -y install --setopt=tsflags=nodocs \
         bsdtar \
         findutils \
@@ -118,7 +119,6 @@ RUN mkdir -p "${HOME}/.pki/nssdb" && \
         xmlstarlet \
         xz \
     && \
-    yum -y update && \
     yum -y clean all --enablerepo='*' && \
     update-alternatives --set python /usr/bin/python3
 
