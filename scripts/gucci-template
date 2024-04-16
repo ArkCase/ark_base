@@ -1,0 +1,70 @@
+#!/bin/bash
+set -euo pipefail
+
+timestamp()
+{
+	date -Ins -u
+}
+
+say()
+{
+	echo -e "$(timestamp): ${@}"
+}
+
+err()
+{
+	say "❌ ${@}"
+}
+
+fail()
+{
+	err "${@}"
+	exit ${EXIT_CODE:-1}
+}
+
+usage()
+{
+	echo -e "usage: ${BASH_ARGV0:-${BASH_SOURCE:-${0}}} [vars-file-1 vars-file-2 vars-file-3 ... vars-file-N]" 1>&2
+	exit 1
+}
+
+for F in "${@}" ; do
+	case "${F}" in
+		"--help" | "-h" | "-?" ) usage ;;
+		* ) ;;
+	esac
+done
+
+VARS=()
+for F in "${@}" ; do
+	[ -n "${F}" ] || continue
+	[ -e "${F}" ] || fail "The variable file [${F}] does not exist"
+	[ -f "${F}" ] || fail "The path [${F}] is not a regular file"
+	[ -r "${F}" ] || fail "The variable file [${F}] is not readable"
+	case "${F,,}" in
+		*.json | *.yaml | *.yml ) ;;
+		* ) fail "Template variable files must have a .yaml/.yml or .json extension: [${F}]" ;;
+	esac
+	VARS+=(--vars-file "${F}")
+done
+
+# Ensure we have a valid value for the missing key spec
+[ -v MISSING_KEY ] || MISSING_KEY=""
+[ -n "${MISSING_KEY}" ] || MISSING_KEY="zero"
+
+# Fold to lowercase
+MISSING_KEY="${MISSING_KEY,,}"
+
+# Check validity ... use default if invalid
+
+# other values for missingkey:
+#  default/invalid = Do nothing and continue execution, print "<no value>" if necessary
+#  zero = Return the "zero value" for the element
+#  error (default) = Stop execution with an error
+case "${MISSING_KEY}" in
+	default | invalid | zero | error ) ;;
+	* ) MISSING_KEY="zero" ;;
+esac
+
+# Render from STDIN into STDOUT
+exec gucci -o missingkey="${MISSING_KEY}" "${VARS[@]}"
