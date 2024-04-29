@@ -32,19 +32,14 @@ ARG PKG="base"
 ARG PLATFORM="el8"
 ARG ACM_GID="10000"
 ARG ACM_GROUP="acm"
-ARG STEP_VER="0.26.0"
+ARG GUCCI_VER="1.6.11"
+ARG GUCCI_SRC="https://github.com/noqcks/gucci/releases/download/v${GUCCI_VER}/gucci-v${GUCCI_VER}-linux-amd64"
+ARG STEP_VER="0.26.1"
 ARG STEP_SRC="https://dl.smallstep.com/gh-release/cli/gh-release-header/v${STEP_VER}/step-cli_${STEP_VER}_amd64.rpm"
 
 # ARG BASE_REPO="registry.stage.redhat.io/ubi8/ubi"
 ARG BASE_REPO="docker.io/rockylinux"
 ARG BASE_IMG="${BASE_REPO}:${VER}"
-
-ARG GUCCI_REG="public.ecr.aws"
-ARG GUCCI_REPO="arkcase/gucci"
-ARG GUCCI_TAG="1.7.0"
-ARG GUCCI_IMG="${GUCCI_REG}/${GUCCI_REPO}:${GUCCI_TAG}"
-
-FROM "${GUCCI_IMG}" as gucci
 
 FROM "${BASE_IMG}"
 
@@ -56,6 +51,7 @@ ARG PKG
 ARG PLATFORM
 ARG ACM_GROUP
 ARG ACM_GID
+ARG GUCCI_SRC
 ARG STEP_SRC
 
 #
@@ -139,8 +135,9 @@ RUN rpm-file-permissions && \
 COPY --chown=root:root scripts/ /usr/local/bin
 RUN chmod a+rX /usr/local/bin/*
 
-COPY --chown=root:root --from=gucci /gucci "/usr/local/bin/gucci"
-RUN chmod u=rwx,go=rx "/usr/local/bin/gucci"
+RUN curl -kL --fail -o "/usr/local/bin/gucci" "${GUCCI_SRC}" && \
+    chown root:root "/usr/local/bin/gucci" && \
+    chmod u=rwx,go=rx "/usr/local/bin/gucci"
 
 ENV ACM_GROUP="${ACM_GROUP}"
 ENV ACM_GID="${ACM_GID}"
