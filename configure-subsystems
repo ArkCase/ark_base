@@ -168,14 +168,15 @@ fi
 #
 # We're enabled ... start defining the environment variables
 #
-
 define_subsys_vars "${SUBSYS_DIR}"
 
-if [ ${#CMD[@]} -gt 0 ] ; then
-	say "🚀 Launching the command: ${CMD[@]@Q}"
-	exec "${CMD[@]}"
+#
+# Envvars are set, now take the next step...
+#
+if [ ${#CMD[@]} -eq 0 ] ; then
+	say "✅ Subsystem access environment variables defined"
+	return 0
 fi
 
-say "✅ Subsystem access environment variables defined"
-
-return 0
+say "🚀 Launching the command: ${CMD[@]@Q}"
+exec "${CMD[@]}"
