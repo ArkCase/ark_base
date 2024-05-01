@@ -1,0 +1,181 @@
+#!/bin/bash
+
+[ -v SUBSYS_DIR ] || SUBSYS_DIR=""
+[ -n "${SUBSYS_DIR}" ] || SUBSYS_DIR="/srv/arkcase"
+
+[ -v SUBSYS_CURRENT ] || SUBSYS_CURRENT=""
+
+[ -v SUBSYS_DEBUG ] || SUBSYS_DEBUG=""
+[ -n "${SUBSYS_DEBUG}" ] || SUBSYS_DEBUG="false"
+case "${SUBSYS_DEBUG,,}" in
+	true | t | 1 | yes | y | on | enable | en | active ) SUBSYS_DEBUG="true" ;;
+	* ) SUBSYS_DEBUG="false" ;;
+esac
+
+timestamp()
+{
+	date -Ins -u
+}
+
+say()
+{
+	echo -e "$(timestamp): ${@}"
+}
+
+err()
+{
+	say "❌ ${@}"
+}
+
+fail()
+{
+	err "${@}"
+	exit ${EXIT_CODE:-1}
+}
+
+to_boolean()
+{
+	case "${1,,}" in
+		true | t | 1 | yes | on | enabled | enable ) echo "true" ;;
+		* ) echo "false" ;;
+	esac
+}
+
+lookup_corrected_key()
+{
+	local SUBSYS="${1}"
+	local TYPE="${2}"
+	local KEY="${3}"
+
+	# TODO: Also support looking up the key in a "fixer table" in case
+	# an infrastructure component names the key differently and beyond
+	# our control, so we can render the right name that everyone else
+	# will expect to find even if the source key is named completely
+	# differently. This is for developer convenience when writing or
+	# maintaining these helm charts so they don't have to mess around
+	# with remembering subtle difference from one chart to the other
+
+	return 0
+}
+
+define_type_vars()
+{
+	local DIR="${1}"
+	local SUBSYS="${2}"
+
+	local TYPE="$(basename "${DIR}")"
+
+	# If we're rendering variables for the current
+	# subsystem, we don't add prefixes AT ALL
+	local PREFIX=""
+	[ "${SUBSYS}" == "${SUBSYS_CURRENT}" ] || PREFIX="SUBSYS_${SUBSYS}_"
+
+	# In case our keys need to be adjusted somehow
+	local CORRECTED_KEY
+
+	while read FILE ; do
+
+		# Read the data from the secret
+		if ! VALUE="$(<"${FILE}")" ; then
+			err "Failed to read the data from [${FILE}]"
+			return 1
+		fi
+
+		KEY="$(basename "${FILE}")"
+
+		# If we have a key correction, use it instead of the original key
+		CORRECTED_KEY="$(lookup_corrected_key "${SUBSYS}" "${TYPE}" "${KEY}")" || CORRECTED_KEY=""
+		if [ -n "${CORRECTED_KEY}" ] ; then
+			say "🔧 Applying key correction for [${SUBSYS}/${TYPE}]::[${KEY}] -> [${CORRECTED_KEY}]"
+			KEY="${CORRECTED_KEY}"
+		fi
+
+		# Make sure we replace all illegal characters with underscores
+		KEY="$(echo -n "${KEY}" | tr -c '[a-zA-Z0-9_]' '_')"
+
+		# Render the final variable name
+		VAR="${PREFIX}${TYPE}_${KEY}"
+
+		# Always normalize to uppercase for envvars, regardless
+		VAR="${VAR^^}"
+
+		"${SUBSYS_DEBUG}" && say "🪧 Declaring ${VAR}..."
+
+		# We use @Q here to ensure that the value is correctly quoted and properly
+		# preserved for the assignment. Since we only support flat strings, we don't
+		# have to mess with the concept of arrays, maps, or functions
+		eval export ${VAR}=${VALUE@Q} || return ${?}
+
+	done < <(find -L "${DIR}" -mindepth 1 -maxdepth 1 -type f -not -name '.*' | sort)
+	return 0
+}
+
+define_subsys_vars()
+{
+	local DIR="${1}"
+
+	if [ ! -d "${DIR}" ] ; then
+		err "The directory [${DIR}] does not exist, skipping"
+		return 0
+	fi
+
+	# DIR will be /srv/arkcase/${subsys}
+	local SUBSYS="$(basename "${DIR}")"
+	SUBSYS="${SUBSYS^^}"
+	say "📝 Declaring secret variables for ${SUBSYS}..."
+
+	# THIS_DIR will be /srv/arkcase/${SUBSYS}/${SOMETHING}, and will
+	# be the mountpoint for a subsystem's secret
+	local THIS_DIR=""
+	while read THIS_DIR ; do
+
+		# Is this a mounted secret? If not, skip it!
+		[ -d "${THIS_DIR}/..data" ] || continue
+
+		# Mounted secret, define all the variables within
+		define_type_vars "${THIS_DIR}" "${SUBSYS}" || return ${?}
+	done < <(find -L "${DIR}" -mindepth 1 -maxdepth 1 -type d -not -name '.*' | sort)
+	return 0
+}
+
+CMD=("${@}")
+SOURCED="false"
+EXIT="exit"
+if [ "${BASH_SOURCE[0]}" == "${0}" ] ; then
+	set -euo pipefail
+	# We're being executed, not sourced, so there must be a command given
+	if [ ${#} -eq 0 ] ; then
+		SCRIPT="${BASH_ARGV0:-${BASH_SOURCE:-${0}}}"
+		echo -e "usage: ${SCRIPT} command [args...]" 1>&2
+		exit 1
+	fi
+else
+	if [ ${#} -ne 0 ] ; then
+		SCRIPT="${BASH_ARGV0:-${BASH_SOURCE:-${0}}}"
+		err "The ${SCRIPT} script may only be sourced without parameters"
+		return 1
+	fi
+
+	SOURCED="true"
+	EXIT="return"
+fi
+
+if "$(to_boolean "${SUBSYS_DISABLE:-false}")" ; then
+	say "✅ Subsystem configuration is disabled by configuration (SUBSYS_DISABLE == ${SUBSYS_DISABLE})"
+	"${EXIT}" 0
+fi
+
+#
+# We're enabled ... start defining the environment variables
+#
+
+define_subsys_vars "${SUBSYS_DIR}"
+
+if [ ${#CMD[@]} -gt 0 ] ; then
+	say "🚀 Launching the command: ${CMD[@]@Q}"
+	exec "${CMD[@]}"
+fi
+
+say "✅ Subsystem access environment variables defined"
+
+return 0
