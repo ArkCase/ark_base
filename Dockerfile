@@ -148,10 +148,10 @@ RUN yum -y install "${STEP_SRC}" && \
     yum -y clean all
 
 # Add the acme-init stuff (only accessible by ACM_GROUP)
-COPY --chown=root:${ACM_GROUP} acme-init acme-validate /usr/local/bin/
+COPY --chown=root:${ACM_GROUP} acme-init acme-validate expand-urls /usr/local/bin/
 COPY --chown=root:root 00-acme-init /etc/sudoers.d
 RUN chmod 0640 /etc/sudoers.d/00-acme-init && \
-    chmod 0750 /usr/local/bin/acme-init /usr/local/bin/acme-validate && \
+    chmod 0750 /usr/local/bin/acme-init /usr/local/bin/acme-validate /usr/local/bin/expand-urls && \
     sed -i -e "s;\${ACM_GROUP};${ACM_GROUP};g" /etc/sudoers.d/00-acme-init
 
 # This is where subsys configurations will be mounted. Can be configured
