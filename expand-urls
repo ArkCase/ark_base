@@ -9,11 +9,22 @@ import urllib.parse
 # This is the prefix that will be required of all envvars to be processed
 #
 PREFIX = "ARKCASE"
+PREFIX_ENVVAR = "EXPAND_URLS_PREFIX"
+PREFIX_SET = False
+
+def assign_prefix(prefix):
+	if not PREFIX_SET and re.match("^[a-zA-Z_][a-zA-Z0-9_]*$", prefix):
+		return (True, prefix)
+	return (PREFIX_SET, PREFIX)
 
 if len(sys.argv) > 1:
-	p = sys.argv[1]
-	if re.match("^[a-zA-Z_][a-zA-Z0-9_]*$", p):
-		PREFIX = p
+	# If the prefix is given as a parameter, try to use it
+	PREFIX_SET, PREFIX = assign_prefix(sys.argv[1])
+
+try:
+	PREFIX_SET, PREFIX = assign_prefix(os.environ[PREFIX_ENVVAR])
+except KeyError:
+	pass
 
 #
 # Make sure the prefix ends with an underscore
