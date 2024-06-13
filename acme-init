@@ -256,6 +256,9 @@ getent group "${ACM_GROUP}" &>/dev/null || fail "The group [${ACM_GROUP}] does n
 [ -v ACME_URL ] || ACME_URL=""
 [ -n "${ACME_URL}" ] || ACME_URL="https://acme:9000"
 
+[ -v ACME_KEY_ALIAS ] || ACME_KEY_ALIAS=""
+[ -n "${ACME_KEY_ALIAS}" ] || ACME_KEY_ALIAS="acme"
+
 # Validate the URL
 [[ "${ACME_URL}" =~ ^http(s)?://([^:/]+)(:([1-9][0-9]*))?(/.*)?$ ]] || fail "Malformed URL for the ACME CA: [${ACME_URL}]"
 
@@ -579,7 +582,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			-in "${SSL_DIR}/cert.pem" \
 			-inkey "${SSL_DIR}/cert.key" \
 			-passin file:<(yes "${STOREPASS}" | head -2) \
-			-name "acme" \
+			-name "${ACME_KEY_ALIAS}" \
 			-out "${PKCS12}" \
 			-passout file:<(yes "${STOREPASS}" | head -2)
 
@@ -611,7 +614,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			# First, copy only the key and cert we want
 			keytool \
 				-importkeystore \
-				-srcalias "acme" \
+				-srcalias "${ACME_KEY_ALIAS}" \
 				-srckeystore "${PKCS12}" \
 				-srcstorepass "${STOREPASS}" \
 				-srcstoretype PKCS12 \
