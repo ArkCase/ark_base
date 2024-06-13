@@ -191,6 +191,41 @@ download_chain()
 	return ${RC}
 }
 
+add_global_trusts()
+{
+	local TYPE="${1}"
+	local KEYSTORE="${2}"
+	local PASSWORD="${3}"
+
+	to_boolean "${ACME_KEYSTORE_WITH_TRUSTS:-false}" || return 0
+
+	say "👉 Adding the default global trusts..."
+	# First off, add the trusts from the default CACERTS
+	keytool \
+		-importkeystore \
+		-srckeystore "${CACERTS}" \
+		-srcstorepass "${CACERTS_PASS}" \
+		-destkeystore "${KEYSTORE}" \
+		-deststorepass "${PASSWORD}" \
+		-deststoretype "${TYPE}" < /dev/null || err "Could not append the global trusts (cacerts)"
+
+	# Now add any files from the anchors directory. By now,
+	# these should include any and all declared trusts
+	say "👉 Adding additional global trusts..."
+	while read CERT ; do
+		ALIAS="${CERT##*/}"
+		ALIAS="acme-${ALIAS%.*}"
+		keytool \
+			-importcert \
+			-noprompt \
+			-keystore "${KEYSTORE}" \
+			-storepass "${PASSWORD}" \
+			-storetype "${TYPE}" \
+			-alias "${ALIAS}" \
+			-file "${CERT}" < /dev/null || err "Could not append [${CERT}]"
+	done < <(find "${ANCHORS}" -mindepth 1 -maxdepth 1 -type f | sort)
+}
+
 if "$(to_boolean "${ACME_DISABLE:-false}")" ; then
 	say "✅ ACME Processing is disabled by configuration (ACME_DISABLE == ${ACME_DISABLE})"
 	exit 0
@@ -206,8 +241,17 @@ getent group "${ACM_GROUP}" &>/dev/null || fail "The group [${ACM_GROUP}] does n
 [ -v SSL_TRUSTS_DIR ] || SSL_TRUSTS_DIR=""
 [ -n "${SSL_TRUSTS_DIR}" ] || SSL_TRUSTS_DIR="/.trusts"
 
+[ -v PKI_HOME ] || PKI_HOME=""
+[ -n "${PKI_HOME}" ] || PKI_HOME="/etc/pki"
+
 [ -v ANCHORS ] || ANCHORS=""
-[ -n "${ANCHORS}" ] || ANCHORS="/etc/pki/ca-trust/source/anchors"
+[ -n "${ANCHORS}" ] || ANCHORS="${PKI_HOME}/ca-trust/source/anchors"
+
+[ -v CACERTS ] || CACERTS=""
+[ -n "${CACERTS}" ] || CACERTS="${PKI_HOME}/java/cacerts"
+
+[ -v CACERTS_PASS ] || CACERTS_PASS=""
+[ -n "${CACERTS_PASS}" ] || CACERTS_PASS="changeit"
 
 [ -v ACME_URL ] || ACME_URL=""
 [ -n "${ACME_URL}" ] || ACME_URL="https://acme:9000"
@@ -526,6 +570,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	# Find the Java keytool, if it's installed
 	if type -P keytool &>/dev/null ; then
 		say "👉 Rendering a PKCS12 Keystore with the new certificate & key..."
+		STOREPASS="$(<"${ACME_KEYSTORE_PASSWORD_FILE}")"
 
 		# First, create the base keystore
 		PKCS12="${SSL_DIR}/keystore.pkcs12"
@@ -533,10 +578,10 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			-export \
 			-in "${SSL_DIR}/cert.pem" \
 			-inkey "${SSL_DIR}/cert.key" \
-			-passin file:<(yes "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" | head -2) \
+			-passin file:<(yes "${STOREPASS}" | head -2) \
 			-name "acme" \
 			-out "${PKCS12}" \
-			-passout file:<(yes "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" | head -2)
+			-passout file:<(yes "${STOREPASS}" | head -2)
 
 		# Then, append the additional CAs into the newly-created keystore
 		for CERT in ca-int.pem ca-root.pem ; do
@@ -545,11 +590,15 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 				-importcert \
 				-noprompt \
 				-keystore "${PKCS12}" \
-				-storepass "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" \
+				-storepass "${STOREPASS}" \
 				-storetype "PKCS12" \
 				-alias "acme-${CERT%.*}" \
 				-file "${SSL_DIR}/${CERT}"
 		done
+
+		# Finally, if so configured, append both the additional trusts and the
+		# Operating system's default trusts into the keystore
+		add_global_trusts PKCS12 "${PKCS12}" "${STOREPASS}"
 		say "\t✅ Ready!"
 
 		# Finally, if other keystore types are required, use them
@@ -557,7 +606,6 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			is_supported "${STORETYPE^^}" || continue
 			say "👉 Creating a ${STORETYPE^^} Java Keystore with the new certificate & key..." 
 			STOREFILE="${SSL_DIR}/keystore.${STORETYPE}"
-			STOREPASS="$(<"${ACME_KEYSTORE_PASSWORD_FILE}")"
 			rm -f "${STOREFILE}" &>/dev/null || true
 
 			# First, copy only the key and cert we want
@@ -584,6 +632,8 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 					-alias "acme-${CERT%.*}" \
 					-file "${SSL_DIR}/${CERT}"
 			done
+
+			add_global_trusts "${STORETYPE}" "${STOREFILE}" "${STOREPASS}"
 			say "\t✅ Ready!"
 		done
 	fi
