@@ -358,12 +358,6 @@ add_global_trusts()
 	done < <(find "${ANCHORS}" -mindepth 1 -maxdepth 1 -type f | sort)
 }
 
-usage()
-{
-	echo -e "usage: ${0} [wait]" 1>&2
-	exit 1
-}
-
 if "$(to_boolean "${ACME_DISABLE:-false}")" ; then
 	say "✅ ACME Processing is disabled by configuration (ACME_DISABLE == ${ACME_DISABLE})"
 	exit 0
@@ -397,6 +391,9 @@ getent group "${ACM_GROUP}" &>/dev/null || fail "The group [${ACM_GROUP}] does n
 [ -v ACME_KEY_ALIAS ] || ACME_KEY_ALIAS=""
 [ -n "${ACME_KEY_ALIAS}" ] || ACME_KEY_ALIAS="acme"
 
+[ -v ACME_WAIT ] || ACME_WAIT=""
+[ -n "${ACME_WAIT}" ] || ACME_WAIT="false"
+
 [ -v ACME_WAIT_MARKER ] || ACME_WAIT_MARKER=""
 [ -n "${ACME_WAIT_MARKER}" ] || ACME_WAIT_MARKER="${SSL_DIR}/.acme-ready"
 
@@ -421,14 +418,8 @@ ACME_ROOT_CA_ANCHOR="${ANCHORS}/${ACME_ROOT_CA_BASENAME}.crt"
 ACME_INT_CA_BASENAME="ca-int"
 ACME_INT_CA_ANCHOR="${ANCHORS}/${ACME_INT_CA_BASENAME}.crt"
 
-ACME_WAIT_MODE="false"
-if [ ${#} -eq 1 ] ; then
-	case "${1:-""}" in
-		wait ) ACME_WAIT_MODE="true" ; wait_for_marker "${ACME_WAIT_MARKER}" || fail "ACME client initialization timed out" ;;
-		* ) usage ;;
-	esac
-elif [ ${#} -gt 1 ] ; then
-	usage
+if "${ACME_WAIT}" ; then
+	wait_for_marker "${ACME_WAIT_MARKER}" || fail "ACME client initialization timed out"
 fi
 
 ################################################################################
@@ -587,7 +578,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	# restrictive of all: only readable by the owner
 	SECURE_FILES=()
 
-	if "${GENERATE_NEW_CERTIFICATES}" && ! "${ACME_WAIT_MODE}" ; then
+	if "${GENERATE_NEW_CERTIFICATES}" && ! "${ACME_WAIT}" ; then
 		FQDN="$(hostname -f)"
 		IFS="." read POD SERVICE NAMESPACE SVC CLUSTER_DOMAIN <<< "${FQDN}"
 
@@ -725,7 +716,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	say "\t✅ Done!"
 
 	# Find the Java keytool, if it's installed
-	if type -P keytool &>/dev/null && ! "${ACME_WAIT_MODE}" ; then
+	if type -P keytool &>/dev/null && ! "${ACME_WAIT}" ; then
 		say "👉 Rendering a PKCS12 Keystore with the new certificate & key..."
 		STOREPASS="$(<"${ACME_KEYSTORE_PASSWORD_FILE}")"
 
@@ -818,7 +809,7 @@ else
 	err "Can't find the provisioner password file at [${ACME_PASSWORD_FILE}], did not generate any new certificates or keystores"
 fi
 
-"${ACME_WAIT_MODE}" || create_marker "${ACME_WAIT_MARKER}" || warn "Failed to create the wait marker [${ACME_WAIT_MARKER}]"
+"${ACME_WAIT}" || create_marker "${ACME_WAIT_MARKER}" || warn "Failed to create the wait marker [${ACME_WAIT_MARKER}]"
 
 say "👉 Updating the trusted certificates"
 chown -R root:root "${ANCHORS}"
