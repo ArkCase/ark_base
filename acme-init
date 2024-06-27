@@ -439,7 +439,7 @@ fi
 GENERATE_NEW_CERTIFICATES="false"
 acme-validate || GENERATE_NEW_CERTIFICATES="true"
 
-if "${GENERATE_NEW_CERTIFICATES}" && ! "${ACME_WAIT_MODE}" ; then
+if "${GENERATE_NEW_CERTIFICATES}" ; then
 	################################################################################
 	#
 	# Download the root CA we'll use to trust everything from this cluster
