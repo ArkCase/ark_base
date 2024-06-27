@@ -664,6 +664,8 @@ else
 	err "Can't find the provisioner password file at [${ACME_PASSWORD_FILE}], did not generate any new certificates or keystores"
 fi
 
+timestamp > "${SSL_DIR}/.acme-ready"
+
 say "👉 Updating the trusted certificates"
 chown -R root:root "${ANCHORS}"
 chmod -R 0440 "${ANCHORS}"
