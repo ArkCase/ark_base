@@ -16,6 +16,11 @@ say()
 	echo -e "$(timestamp): ${@}"
 }
 
+warn()
+{
+	say "⚠️ ${@}"
+}
+
 err()
 {
 	say "❌ ${@}" 1>&2
@@ -25,6 +30,134 @@ fail()
 {
 	err "${@}"
 	exit ${EXIT_CODE:-1}
+}
+
+marker_exists()
+{
+	local MARKER="${1}"
+	[ -e "${MARKER}" ] || return 1
+	[ -f "${MARKER}" ] || return 1
+	[ -r "${MARKER}" ] || return 1
+	[ -s "${MARKER}" ] || return 1
+	return 0
+}
+
+#
+# This function returns the number that serves as
+# a multiplier/divisor for a given time scale
+#
+get_time_mul()
+{
+	local TAG="${1^^}"
+
+	[[ "${TAG}" =~ ^[HDMS]$ ]] || return 1
+	local DURATION_S=1
+	local DURATION_M=$(( DURATION_S * 60 ))
+	local DURATION_H=$(( DURATION_M * 60 ))
+	local DURATION_D=$(( DURATION_H * 24 ))
+
+	local VAR="DURATION_${TAG}"
+	echo -n "${!VAR}"
+}
+
+#
+# This function converts numbers of seconds into
+# K8s timespecs, but leaves timespec strings alone
+#
+secs_to_timestr()
+{
+	local STR="${1}"
+	local NUM="(0|[1-9][0-9]*)"
+
+	[ -n "${STR}" ] || return 1
+
+	# If it's already a time string, return it
+	if [[ "${STR^^}" =~ ^(${NUM}D)?(${NUM}H)?(${NUM}M)?(${NUM}S)?$ ]] ; then
+		echo -n "${STR,,}"
+		return 0
+	fi
+
+	[[ "${STR}" =~ ^${NUM}$ ]] || return 1
+
+	local RET=""
+	local SIZE=0
+	local MUL=0
+	local SECS=${STR}
+	for C in D H M S ; do
+		MUL=$(get_time_mul "${C}")
+		(( SIZE = ( SECS / MUL ) ))
+		[ ${SIZE} -gt 0 ] && RET+="${SIZE}${C}"
+		(( SECS -= ( SIZE * MUL ) ))
+	done
+
+	echo -n ${RET,,}
+	return 0
+}
+
+#
+# This function converts K8s timespecs into
+# numbers of seconds, but leaves numbers alone
+#
+timestr_to_secs()
+{
+	local STR="${1}"
+	local NUM="(0|[1-9][0-9]*)"
+
+	# If it's a straight-up number,
+	# seconds already, so just return it
+	if [[ "${STR}" =~ ^${NUM}$ ]] ; then
+		echo -e "${STR}"
+		return 0
+	fi
+
+	# It could be a time string, so parse it out
+	[ -n "${STR}" ] || return 1
+	[[ "${STR^^}" =~ ^(${NUM}D)?(${NUM}H)?(${NUM}M)?(${NUM}S)?$ ]] || return 1
+
+	local PARTS=( "${BASH_REMATCH[@]:1}" )
+	[ ${#PARTS[@]} -ge 1 ] || return 1
+
+	local SIZE=0
+	local MUL=0
+	local SECS=0
+	for (( i = 0 ; i < ${#PARTS[@]} ; i++ )) ; do
+		[[ "${PARTS[i]}" =~ ^${NUM}([DHMS])$ ]] || continue
+		SIZE=${BASH_REMATCH[1]}
+		MUL=$(get_time_mul "${BASH_REMATCH[2]}")
+		(( SECS += SIZE * MUL ))
+	done
+
+	echo -n ${SECS}
+	return 0
+}
+
+wait_for_marker()
+{
+	local MARKER="${1}"
+	local ACME_WAIT_TIMEOUT_STR="$(secs_to_timestr "${ACME_WAIT_TIMEOUT}")"
+	local FIRST="true"
+	local START="$(date +%s)"
+	while ! marker_exists "${MARKER}" ; do
+		"${FIRST}" && say "⌛ Waiting for the ACME certificates to be initialized (up to ${ACME_WAIT_TIMEOUT_STR} total)..."
+		FIRST="false"
+
+		# Poke every 100ms (10 times per second)
+		sleep 0.1 || fail "Sleep interrupted"
+		local NOW="$(date +%s)"
+
+		# If the timeout has expired, return a non-zero value
+		[ $(( NOW - START )) -lt ${ACME_WAIT_TIMEOUT} ] || return 1
+	done
+	say "✅ ACME client is initialized is ready"
+	return 0
+}
+
+create_marker()
+{
+	local MARKER="${1}"
+	local DIR="$(dirname "${MARKER}")"
+	[ -d "${DIR}" ] || mkdir -p "${DIR}" && timestamp > "${MARKER}"
+	return ${?}
 }
 
 to_boolean()
@@ -79,7 +212,6 @@ validate_ip()
    done
    return 0
 }
-
 
 is_variable_true()
 {
@@ -226,6 +358,12 @@ add_global_trusts()
 	done < <(find "${ANCHORS}" -mindepth 1 -maxdepth 1 -type f | sort)
 }
 
+usage()
+{
+	echo -e "usage: ${0} [wait]" 1>&2
+	exit 1
+}
+
 if "$(to_boolean "${ACME_DISABLE:-false}")" ; then
 	say "✅ ACME Processing is disabled by configuration (ACME_DISABLE == ${ACME_DISABLE})"
 	exit 0
@@ -259,6 +397,12 @@ getent group "${ACM_GROUP}" &>/dev/null || fail "The group [${ACM_GROUP}] does n
 [ -v ACME_KEY_ALIAS ] || ACME_KEY_ALIAS=""
 [ -n "${ACME_KEY_ALIAS}" ] || ACME_KEY_ALIAS="acme"
 
+[ -v ACME_WAIT_MARKER ] || ACME_WAIT_MARKER=""
+[ -n "${ACME_WAIT_MARKER}" ] || ACME_WAIT_MARKER="${SSL_DIR}/.acme-ready"
+
+[ -v ACME_WAIT_TIMEOUT ] || ACME_WAIT_TIMEOUT=""
+[ -n "${ACME_WAIT_TIMEOUT}" ] || ACME_WAIT_TIMEOUT="$(timestr_to_secs 20m)"
+
 # Validate the URL
 [[ "${ACME_URL}" =~ ^http(s)?://([^:/]+)(:([1-9][0-9]*))?(/.*)?$ ]] || fail "Malformed URL for the ACME CA: [${ACME_URL}]"
 
@@ -277,6 +421,16 @@ ACME_ROOT_CA_ANCHOR="${ANCHORS}/${ACME_ROOT_CA_BASENAME}.crt"
 ACME_INT_CA_BASENAME="ca-int"
 ACME_INT_CA_ANCHOR="${ANCHORS}/${ACME_INT_CA_BASENAME}.crt"
 
+ACME_WAIT_MODE="false"
+if [ ${#} -eq 1 ] ; then
+	case "${1:-""}" in
+		wait ) ACME_WAIT_MODE="true" ; wait_for_marker "${ACME_WAIT_MARKER}" || fail "ACME client initialization timed out" ;;
+		* ) usage ;;
+	esac
+elif [ ${#} -gt 1 ] ; then
+	usage
+fi
+
 ################################################################################
 #
 # Check that our existing stuff is valid
@@ -285,7 +439,7 @@ ACME_INT_CA_ANCHOR="${ANCHORS}/${ACME_INT_CA_BASENAME}.crt"
 GENERATE_NEW_CERTIFICATES="false"
 acme-validate || GENERATE_NEW_CERTIFICATES="true"
 
-if "${GENERATE_NEW_CERTIFICATES}" ; then
+if "${GENERATE_NEW_CERTIFICATES}" && ! "${ACME_WAIT_MODE}" ; then
 	################################################################################
 	#
 	# Download the root CA we'll use to trust everything from this cluster
@@ -433,7 +587,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	# restrictive of all: only readable by the owner
 	SECURE_FILES=()
 
-	if "${GENERATE_NEW_CERTIFICATES}" ; then
+	if "${GENERATE_NEW_CERTIFICATES}" && ! "${ACME_WAIT_MODE}" ; then
 		FQDN="$(hostname -f)"
 		IFS="." read POD SERVICE NAMESPACE SVC CLUSTER_DOMAIN <<< "${FQDN}"
 
@@ -571,7 +725,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	say "\t✅ Done!"
 
 	# Find the Java keytool, if it's installed
-	if type -P keytool &>/dev/null ; then
+	if type -P keytool &>/dev/null && ! "${ACME_WAIT_MODE}" ; then
 		say "👉 Rendering a PKCS12 Keystore with the new certificate & key..."
 		STOREPASS="$(<"${ACME_KEYSTORE_PASSWORD_FILE}")"
 
@@ -664,7 +818,7 @@ else
 	err "Can't find the provisioner password file at [${ACME_PASSWORD_FILE}], did not generate any new certificates or keystores"
 fi
 
-timestamp > "${SSL_DIR}/.acme-ready"
+"${ACME_WAIT_MODE}" || create_marker "${ACME_WAIT_MARKER}" || warn "Failed to create the wait marker [${ACME_WAIT_MARKER}]"
 
 say "👉 Updating the trusted certificates"
 chown -R root:root "${ANCHORS}"
