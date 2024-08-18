@@ -8,9 +8,36 @@ import urllib.parse
 #
 # This is the prefix that will be required of all envvars to be processed
 #
-PREFIX = "ARKCASE"
+PREFIX = "ARKCASE_"
+SUFFIX = "_URL"
 PREFIX_ENVVAR = "EXPAND_URLS_PREFIX"
 PREFIX_SET = False
+
+SCHEME_PORTS = {
+	"ftp" : 21,
+	"ftps" : 990,
+	"gopher" : 70,
+	"http" : 80,
+	"https" : 443,
+	"ldap" : 389,
+	"ldaps" : 636,
+	"imap" : 143,
+	"imaps" : 993,
+	"pop" : 110,
+	"pops" : 995,
+	"smtp" : 25,
+	"smtps" : 465,
+	"ssh" : 22,
+	"sftp" : 22,
+	"telnet" : 23,
+	"nfs" : 2049,
+	"nntp" : 119,
+}
+
+def resolve_port_from_scheme(scheme):
+	if (scheme) and (scheme in SCHEME_PORTS):
+		return int(SCHEME_PORTS[scheme])
+	return None
 
 def assign_prefix(prefix):
 	if not PREFIX_SET and re.match("^[a-zA-Z_][a-zA-Z0-9_]*$", prefix):
@@ -40,7 +67,9 @@ parts = {
 	"scheme" : "scheme",
 	"path" : "path",
 	"hostname" : "host",
-	"port" : "port"
+	"port" : "port",
+	"query" : "query",
+	"fragment" : "fragment",
 }
 
 #
@@ -49,7 +78,7 @@ parts = {
 # the pattern ${PREFIX}_*_URL
 #
 def parse_url(name, value):
-	if name.startswith(PREFIX) and name.endswith("_URL"):
+	if name.startswith(PREFIX) and name.endswith(SUFFIX):
 		return urllib.parse.urlparse(value)
 	return None
 
@@ -70,6 +99,16 @@ for name, value in os.environ.items():
 			v = getattr(url, field)
 			if v:
 				partValue = v
+
+		#
+		# Special case: if there's no port, compute it
+		# from the scheme (if there's a scheme)
+		#
+		if (not partValue) and (field == "port"):
+			partValue = resolve_port_from_scheme(url.scheme)
+
+		if (not partValue):
+			partValue = ""
 
 		#
 		# Spit out stuff that can be eval'd by the shell
