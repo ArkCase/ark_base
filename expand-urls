@@ -9,9 +9,13 @@ import urllib.parse
 # This is the prefix that will be required of all envvars to be processed
 #
 PREFIX = "ARKCASE_"
-SUFFIX = "_URL"
 PREFIX_ENVVAR = "EXPAND_URLS_PREFIX"
-PREFIX_SET = False
+
+#
+# This is the suffix that will be required of all envvars to be processed
+#
+SUFFIX = "_URL"
+SUFFIX_ENVVAR = "EXPAND_URLS_SUFFIX"
 
 SCHEME_PORTS = {
 	"ftp" : 21,
@@ -39,25 +43,49 @@ def resolve_port_from_scheme(scheme):
 		return int(SCHEME_PORTS[scheme])
 	return None
 
-def assign_prefix(prefix):
-	if not PREFIX_SET and re.match("^[a-zA-Z_][a-zA-Z0-9_]*$", prefix):
-		return (True, prefix)
-	return (PREFIX_SET, PREFIX)
+def assign_value(value, default=None):
+
+	# Allow empty values
+	if (value != None) and (not value):
+		return value
+
+	# If a non-empty value is given, then make sure
+	# it's valid as an environment variable name
+	if re.match("^[a-zA-Z_][a-zA-Z0-9_]*$", value):
+		return value
+
+	# If it's not valid, use the default
+	return default
 
 if len(sys.argv) > 1:
 	# If the prefix is given as a parameter, try to use it
-	PREFIX_SET, PREFIX = assign_prefix(sys.argv[1])
+	PREFIX = assign_value(sys.argv[1], PREFIX)
+else:
+	try:
+		PREFIX = assign_value(os.environ[PREFIX_ENVVAR], PREFIX)
+	except KeyError:
+		pass
 
-try:
-	PREFIX_SET, PREFIX = assign_prefix(os.environ[PREFIX_ENVVAR])
-except KeyError:
-	pass
+if len(sys.argv) > 2:
+	# If the suffix is given as a parameter, try to use it
+	SUFFIX = assign_value(sys.argv[2], SUFFIX)
+else:
+	try:
+		SUFFIX = assign_value(os.environ[SUFFIX_ENVVAR], SUFFIX)
+	except KeyError:
+		pass
 
 #
 # Make sure the prefix ends with an underscore
 #
-if not PREFIX.endswith("_"):
-	PREFIX += "_"
+if PREFIX and (not PREFIX.endswith("_")):
+	PREFIX = f"{PREFIX}_"
+
+#
+# Make sure the suffix starts with an underscore
+#
+if SUFFIX and (not SUFFIX.startswith("_")):
+	SUFFIX = f"_{SUFFIX}"
 
 #
 # This map links names of fields to the suffixes that will be applied
