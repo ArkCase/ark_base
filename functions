@@ -1,0 +1,453 @@
+#!/bin/bash
+
+#
+# This file should be sourced by calling scripts, to define the common-use
+# base functions we can leverage on all shell scripts, all over the place
+#
+
+#
+# usage: timestamp
+#
+# Outputs the current system time in UTC, using ISO-8601
+# format with nanosecond resolution
+#
+timestamp()
+{
+	/usr/bin/date -Ins -u
+}
+
+#
+# usage: say [args ...]
+#
+# Output a message to stdout, preceded by a timestamp
+#
+say()
+{
+	echo -e "$(timestamp): ${@}"
+}
+
+#
+# These functions are just for prettyness and convenience :)
+#
+
+doing()
+{
+	say "👉 ${@}"
+}
+
+ok()
+{
+	say "✅ ${@}"
+}
+
+warn()
+{
+	say "⚠️ ${@}"
+}
+
+err()
+{
+	say "❌ ${@}"
+}
+
+waiting()
+{
+	say "⏳ ${@}"
+}
+
+sleeping()
+{
+	say "💤 ${@}"
+}
+
+running()
+{
+	say "🚀 ${@}"
+}
+
+#
+# usage: [EXIT_VALUE=X] fail [args ...]
+#
+# End processing (via a call to exit) with the exit code
+# V (default is 1 if not specified), and outputting
+# the given message using the err function.
+#
+fail()
+{
+	err "${@}"
+	exit ${EXIT_CODE:-1}
+}
+
+#
+# usage: is_dir DIR
+#
+# Checks to see if the directory exists, is a directory,
+# and is executable by the current user.
+#
+# The return values are:
+#
+#    0 = success
+#    1 = empty string given
+#    2 = does not exist
+#    3 = is not a directory
+#    4 = is not executable
+#
+is_dir()
+{
+	local DIR="${1}"
+	[ -n "${DIR}" ] || return 1
+	[ -e "${DIR}" ] || return 2
+	[ -d "${DIR}" ] || return 3
+	[ -x "${DIR}" ] || return 4
+	return 0
+}
+
+#
+# usage: is_dir_readable DIR
+#
+# Checks to see if the directory exists (as per is_dir),
+# and is readable by the current user.
+#
+# The return values are:
+#
+#    0 = success
+#    1 = empty string given
+#    2 = does not exist
+#    3 = is not a directory
+#    4 = is not executable
+#    5 = is not readable
+#
+is_dir_readable()
+{
+	local DIR="${1}"
+	is_dir "${1}" || return ${?}
+	[ -r "${DIR}" ] || return 5
+	return 0
+}
+
+#
+# usage: is_dir_writable DIR
+#
+# Checks to see if the directory exists (as per is_dir),
+# and is writable by the current user.
+#
+# The return values are:
+#
+#    0 = success
+#    1 = empty string given
+#    2 = does not exist
+#    3 = is not a directory
+#    4 = is not executable
+#    6 = is not writable
+#
+is_dir_writable()
+{
+	local DIR="${1}"
+	is_dir "${1}" || return ${?}
+	[ -w "${DIR}" ] || return 6
+	return 0
+}
+
+#
+# usage: is_dir_readwrite DIR
+#
+# Checks to see if the directory exists (as per is_dir),
+# and is readable AND writable by the current user.
+#
+# The return values are:
+#
+#    0 = success
+#    1 = empty string given
+#    2 = does not exist
+#    3 = is not a directory
+#    4 = is not executable
+#    5 = is not readable
+#    6 = is not writable
+#
+is_dir_readwrite()
+{
+	local DIR="${1}"
+	is_dir "${1}" || return ${?}
+	[ -r "${DIR}" ] || return 5
+	[ -w "${DIR}" ] || return 6
+	return 0
+}
+
+#
+# usage: render_dir_error DIR CODE
+#
+# Generates an error message corresponding to the error code
+# as returned by the is_dir function family. This exists
+# for convenience when reporting issues.
+#
+dir_error()
+{
+	local DIR="${1}"
+	local CODE="${2}"
+	local MSG=""
+	case "${CODE}" in
+		0 ) ;;
+		1 ) MSG="The directory name may not be the empty string" ;;
+		2 ) MSG="The directory [${DIR}] does not exist" ;;
+		3 ) MSG="The path [${DIR}] is not a directory" ;;
+		4 ) MSG="The directory [${DIR}] is not executable" ;;
+		5 ) MSG="The directory [${DIR}] is not readable" ;;
+		6 ) MSG="The directory [${DIR}] is not writable" ;;
+		* ) MSG="Unknown error code [${CODE}] when examining directory [${DIR}]" ;;
+	esac
+	[ -n "${MSG}" ] && echo "${MSG}"
+}
+
+#
+# usage: is_file FILE
+#
+# Checks to see if the file exists and is a regular file
+#
+# The return values are:
+#
+#    0 = success
+#    1 = empty string given
+#    2 = does not exist
+#    3 = is not a file
+#
+is_file()
+{
+	local FILE="${1}"
+	[ -n "${FILE}" ] || return 1
+	[ -e "${FILE}" ] || return 2
+	[ -f "${FILE}" ] || return 3
+	return 0
+}
+
+#
+# usage: is_file_readable FILE
+#
+# Checks to see if the file exists (as per is_file),
+# and is readable by the current user.
+#
+# The return values are:
+#
+#    0 = success
+#    1 = empty string given
+#    2 = does not exist
+#    3 = is not a file
+#    4 = is not readable
+#
+is_file_readable()
+{
+	local FILE="${1}"
+	is_file "${1}" || return ${?}
+	[ -r "${FILE}" ] || return 4
+	return 0
+}
+
+#
+# usage: is_file_writable FILE
+#
+# Checks to see if the file exists (as per is_file),
+# and is writable by the current user.
+#
+# The return values are:
+#
+#    0 = success
+#    1 = empty string given
+#    2 = does not exist
+#    3 = is not a file
+#    5 = is not writable
+#
+is_file_writable()
+{
+	local FILE="${1}"
+	is_file "${1}" || return ${?}
+	[ -w "${FILE}" ] || return 5
+	return 0
+}
+
+#
+# usage: is_file_readwrite FILE
+#
+# Checks to see if the file exists (as per is_file),
+# and is readable AND writable by the current user.
+#
+# The return values are:
+#
+#    0 = success
+#    1 = empty string given
+#    2 = does not exist
+#    3 = is not a file
+#    4 = is not readable
+#    5 = is not writable
+#
+is_file_readwrite()
+{
+	local FILE="${1}"
+	is_file "${1}" || return ${?}
+	[ -r "${FILE}" ] || return 3
+	[ -w "${FILE}" ] || return 4
+	return 0
+}
+
+#
+# usage: is_file_executable FILE
+#
+# Checks to see if the file exists and is
+# readable (as per is_file), and is
+# executable by the current user.
+#
+# The return values are:
+#
+#    0 = success
+#    1 = empty string given
+#    2 = does not exist
+#    3 = is not a file
+#    4 = is not readable
+#    6 = is not executable
+#
+is_file_executable()
+{
+	local FILE="${1}"
+	is_file_readable "${1}" || return ${?}
+	[ -x "${FILE}" ] || return 5
+	return 0
+}
+
+#
+# usage: render_file_error FILE CODE
+#
+# Generates an error message corresponding to the error code
+# as returned by the is_file function family. This exists
+# for convenience when reporting issues.
+#
+file_error()
+{
+	local FILE="${1}"
+	local CODE="${2}"
+	local MSG=""
+	case "${CODE}" in
+		0 ) ;;
+		1 ) MSG="The file name may not be the empty string" ;;
+		2 ) MSG="The file [${FILE}] does not exist" ;;
+		3 ) MSG="The path [${FILE}] is not a regular file" ;;
+		4 ) MSG="The file [${FILE}] is not readable" ;;
+		5 ) MSG="The file [${FILE}] is not writable" ;;
+		6 ) MSG="The file [${FILE}] is not executable" ;;
+		* ) MSG="Unknown error code [${CODE}] when examining file [${FILE}]" ;;
+	esac
+	[ -n "${MSG}" ] && echo "${MSG}"
+}
+
+#
+# Usage: is_help_flag "${@}"
+#
+# Returns a 0 return value if an help flag has been
+# provided in the given parameter list, or a non-0
+# return value otherwise.
+#
+# The help flags are the strings "-?", "-h", and "--help"
+#
+is_help_flag()
+{
+	for n in "${@}" ; do
+		case "${n}" in
+			"-?" | "-h" | "--help" ) return 0 ;;
+			* ) ;;
+		esac
+	done
+	return 1
+}
+
+#
+# usage: as_boolean VALUE
+#
+# Checks to see if VALUE is a boolean-equivalent of a
+# true-value. The following strings are interpreted
+# as true-value equivalents (case-insensitive):
+#
+#    "true"
+#    "t"
+#    "yes"
+#    "y"
+#    "enable"
+#    "enabled"
+#    "on"
+#
+# Non-zero number strings are also interpreted as true-values.
+#
+# If value is a true-equivalent, the return value
+# is 0, otherwise it will be non-0.
+#
+as_boolean()
+{
+	local V="${1:-""}"
+
+	# Is this a known true-equivalent string?
+	case "${V,,}" in
+		true | t | yes | y | enable | enabled | on ) return 0 ;;
+	esac
+
+	# Is it a non-zero number?
+	[[ "${V}" =~ ^-?[1-9][0-9]*$ ]] && [ ${V} -ne 0 ] && return 0
+
+	# Then this is certainly a false-value
+	return 1
+}
+
+#
+# usage: to_boolean VALUE
+#
+# Checks to see if VALUE is a boolean (as per as_boolean),
+# and outputs "true" if its a true-value, or "false" if it's
+# a false-value
+#
+to_boolean()
+{
+	local V="false"
+	as_boolean "${@}" && V="true"
+	echo -n "${V}"
+	return 0
+}
+
+#
+# usage: ensure VAR [DEFAULT]
+#
+# Ensures that the variable VAR has a value assigned.
+#
+# If the variable VAR is undefined or has an empty value, it will
+# be set using the value DEFAULT, or the empty string if it wasn't
+# provided. The variable's attributes (i.e. export, uppercase,
+# lowercase, etc.) will be preserved if it's already been declared.
+#
+# Read-only variables and arrays of any kind will be ignored, and
+# all variables declared will be global in the script's scope.
+#
+ensure()
+{
+	[ ${#} -ge 1 ] || return 1
+
+	local VAR="${1}"
+	shift
+
+	local RESULT=""
+
+	if [ -v "${VAR}" ] ; then
+		RESULT="${!VAR}" &>/dev/null || fail "Illegal variable name [${VAR}]"
+
+		# Identify if this is one of the types of variables
+		# that we have problems with
+		local DECL="$(declare -p "${VAR}")"
+		local RE="^declare -(-|[aAfFiIlnrtux]+) ${VAR}"
+		if [[ "${DECL}" =~ ${RE} ]] ; then
+			DECL="${BASH_REMATCH[1]}"
+			case "${DECL}" in
+				# Ignore arrays and read-only variables
+				*a* | *A* | *r* ) return 0 ;;
+			esac
+		fi
+	fi
+
+	# No value or an empty one? Use the alternate default
+	[ -z "${RESULT}" ] && [ ${#} -ge 1 ] && RESULT=("${@}")
+
+	# Declare it, keeping its attributes!
+	declare -Ig ${VAR}="${RESULT}"
+}

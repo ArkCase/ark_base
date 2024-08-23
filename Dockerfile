@@ -160,6 +160,10 @@ ENV SUBSYS_DIR="/srv/arkcase"
 COPY --chown=root:root configure-subsystems /usr/local/bin/
 RUN chmod 0755 /usr/local/bin/configure-subsystems
 
+# Add the common-use functions
+COPY --chown=root:root functions /.functions
+RUN chmod 0444 /.functions
+
 # Directory with the sources is set as the working directory so all STI scripts
 # can execute relative to this path.
 WORKDIR "${HOME}"
