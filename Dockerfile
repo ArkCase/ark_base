@@ -154,12 +154,6 @@ RUN chmod 0640 /etc/sudoers.d/00-acme-init && \
     chmod 0750 /usr/local/bin/acme-init /usr/local/bin/acme-validate /usr/local/bin/expand-urls && \
     sed -i -e "s;\${ACM_GROUP};${ACM_GROUP};g" /etc/sudoers.d/00-acme-init
 
-# This is where subsys configurations will be mounted. Can be configured
-# per-pod, but must be consistent within the pod.
-ENV SUBSYS_DIR="/srv/arkcase"
-COPY --chown=root:root configure-subsystems /usr/local/bin/
-RUN chmod 0755 /usr/local/bin/configure-subsystems
-
 # Add the common-use functions
 COPY --chown=root:root functions /.functions
 RUN chmod 0444 /.functions

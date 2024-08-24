@@ -78,6 +78,27 @@ fail()
 	exit ${EXIT_CODE:-1}
 }
 
+quit()
+{
+	say "🚪 ${@}"
+	exit ${EXIT_CODE:-0}
+}
+
+#
+# usage: declare_base_vars
+#
+# Declares some base-use variables:
+#
+#	- __BASEDIR = the directory where the currently-executing script resides
+#	- __SCRIPT = the filename for the currently-executing script
+#
+define_base_vars()
+{
+	local SCRIPT="$(readlink -f "${BASH_ARGV0:-${BASH_SOURCE:-${0}}}")"
+	declare -gx __BASEDIR="$(dirname "${SCRIPT}")"
+	declare -gx __SCRIPT="$(basename "${SCRIPT}")"
+}
+
 #
 # usage: is_dir DIR
 #
@@ -86,11 +107,11 @@ fail()
 #
 # The return values are:
 #
-#    0 = success
-#    1 = empty string given
-#    2 = does not exist
-#    3 = is not a directory
-#    4 = is not executable
+#	0 = success
+#	1 = empty string given
+#	2 = does not exist
+#	3 = is not a directory
+#	4 = is not executable
 #
 is_dir()
 {
@@ -110,12 +131,12 @@ is_dir()
 #
 # The return values are:
 #
-#    0 = success
-#    1 = empty string given
-#    2 = does not exist
-#    3 = is not a directory
-#    4 = is not executable
-#    5 = is not readable
+#	0 = success
+#	1 = empty string given
+#	2 = does not exist
+#	3 = is not a directory
+#	4 = is not executable
+#	5 = is not readable
 #
 is_dir_readable()
 {
@@ -133,12 +154,12 @@ is_dir_readable()
 #
 # The return values are:
 #
-#    0 = success
-#    1 = empty string given
-#    2 = does not exist
-#    3 = is not a directory
-#    4 = is not executable
-#    6 = is not writable
+#	0 = success
+#	1 = empty string given
+#	2 = does not exist
+#	3 = is not a directory
+#	4 = is not executable
+#	6 = is not writable
 #
 is_dir_writable()
 {
@@ -156,13 +177,13 @@ is_dir_writable()
 #
 # The return values are:
 #
-#    0 = success
-#    1 = empty string given
-#    2 = does not exist
-#    3 = is not a directory
-#    4 = is not executable
-#    5 = is not readable
-#    6 = is not writable
+#	0 = success
+#	1 = empty string given
+#	2 = does not exist
+#	3 = is not a directory
+#	4 = is not executable
+#	5 = is not readable
+#	6 = is not writable
 #
 is_dir_readwrite()
 {
@@ -195,7 +216,101 @@ dir_error()
 		6 ) MSG="The directory [${DIR}] is not writable" ;;
 		* ) MSG="Unknown error code [${CODE}] when examining directory [${DIR}]" ;;
 	esac
-	[ -n "${MSG}" ] && echo "${MSG}"
+	[ -n "${MSG}" ] && err "${MSG}"
+}
+#
+# usage: fail_dir DIR CODE
+#
+# Exit the current script (as when calling fail), but
+# render an error message corresponding to the exit code
+# of a function in the is_dir family
+#
+fail_dir()
+{
+	local DIR="${1}"
+	local CODE="${2}"
+	local MSG="$(dir_error "${DIR}" "${CODE}")"
+
+	echo -e "${MSG}"
+	exit ${EXIT_CODE:-1}
+}
+
+#
+# usage: ensure_dir DIR
+#
+# Make sure the directory exists, and is both
+# readable and writable, or create it, along
+# with any missing parent paths as needed.
+#
+# Returns 0 if DIR exists after the call, or
+# exits the script with a non-0 status and an
+# error message otherwise.
+#
+ensure_dir()
+{
+	local DIR="${1}"
+
+	is_dir_readwrite "${DIR}" && return 0
+
+	mkdir -p "${DIR}" || fail "The directory [${DIR}] did not exist and could not be created"
+}
+
+__require_dir()
+{
+	local FUNC="${1}"
+	local DIR="${2}"
+	"${FUNC}" "${DIR}" || fail_dir "${DIR}" "${!}"
+}
+
+#
+# usage: require_dir DIR
+#
+# Check if the directory exists, and exit
+# the script with a non-0 exit status and an
+# error message if it is not.
+#
+require_dir()
+{
+	__require_dir is_dir "${@}"
+}
+
+#
+# usage: require_dir_readable DIR
+#
+# Check if the directory exists and is
+# readable, and exit the script with a
+# non-0 exit status and an error message
+# if it is not.
+#
+require_dir_readable()
+{
+	__require_dir is_dir_readable "${@}"
+}
+
+#
+# usage: require_dir_writable DIR
+#
+# Check if the directory exists and is
+# writable, and exit the script with a
+# non-0 exit status and an error message
+# if it is not.
+#
+require_dir_writable()
+{
+	__require_dir is_dir_writable "${@}"
+}
+
+#
+# usage: require_dir_readwrite DIR
+#
+# Check if the directory exists and is
+# readable AND writable, and exit the
+# script with a non-0 exit status and
+# an error message if it is not.
+#
+require_dir_readwrite()
+{
+	__require_dir is_dir_readwrite "${@}"
 }
 
 #
@@ -205,10 +320,10 @@ dir_error()
 #
 # The return values are:
 #
-#    0 = success
-#    1 = empty string given
-#    2 = does not exist
-#    3 = is not a file
+#	0 = success
+#	1 = empty string given
+#	2 = does not exist
+#	3 = is not a file
 #
 is_file()
 {
@@ -227,11 +342,11 @@ is_file()
 #
 # The return values are:
 #
-#    0 = success
-#    1 = empty string given
-#    2 = does not exist
-#    3 = is not a file
-#    4 = is not readable
+#	0 = success
+#	1 = empty string given
+#	2 = does not exist
+#	3 = is not a file
+#	4 = is not readable
 #
 is_file_readable()
 {
@@ -249,11 +364,11 @@ is_file_readable()
 #
 # The return values are:
 #
-#    0 = success
-#    1 = empty string given
-#    2 = does not exist
-#    3 = is not a file
-#    5 = is not writable
+#	0 = success
+#	1 = empty string given
+#	2 = does not exist
+#	3 = is not a file
+#	5 = is not writable
 #
 is_file_writable()
 {
@@ -271,12 +386,12 @@ is_file_writable()
 #
 # The return values are:
 #
-#    0 = success
-#    1 = empty string given
-#    2 = does not exist
-#    3 = is not a file
-#    4 = is not readable
-#    5 = is not writable
+#	0 = success
+#	1 = empty string given
+#	2 = does not exist
+#	3 = is not a file
+#	4 = is not readable
+#	5 = is not writable
 #
 is_file_readwrite()
 {
@@ -296,12 +411,12 @@ is_file_readwrite()
 #
 # The return values are:
 #
-#    0 = success
-#    1 = empty string given
-#    2 = does not exist
-#    3 = is not a file
-#    4 = is not readable
-#    6 = is not executable
+#	0 = success
+#	1 = empty string given
+#	2 = does not exist
+#	3 = is not a file
+#	4 = is not readable
+#	6 = is not executable
 #
 is_file_executable()
 {
@@ -312,7 +427,7 @@ is_file_executable()
 }
 
 #
-# usage: render_file_error FILE CODE
+# usage: file_error FILE CODE
 #
 # Generates an error message corresponding to the error code
 # as returned by the is_file function family. This exists
@@ -333,11 +448,28 @@ file_error()
 		6 ) MSG="The file [${FILE}] is not executable" ;;
 		* ) MSG="Unknown error code [${CODE}] when examining file [${FILE}]" ;;
 	esac
-	[ -n "${MSG}" ] && echo "${MSG}"
+	[ -n "${MSG}" ] && err "${MSG}"
 }
 
 #
-# Usage: is_help_flag "${@}"
+# usage: fail_file FILE CODE
+#
+# Exit the current script (as when calling fail), but
+# render an error message corresponding to the exit code
+# of a function in the is_file family
+#
+fail_file()
+{
+	local FILE="${1}"
+	local CODE="${2}"
+	local MSG="$(file_error "${FILE}" "${CODE}")"
+
+	echo -e "${MSG}"
+	exit ${EXIT_CODE:-1}
+}
+
+#
+# usage: is_help_flag "${@}"
 #
 # Returns a 0 return value if an help flag has been
 # provided in the given parameter list, or a non-0
@@ -363,13 +495,13 @@ is_help_flag()
 # true-value. The following strings are interpreted
 # as true-value equivalents (case-insensitive):
 #
-#    "true"
-#    "t"
-#    "yes"
-#    "y"
-#    "enable"
-#    "enabled"
-#    "on"
+#	"true"
+#	"t"
+#	"yes"
+#	"y"
+#	"enable"
+#	"enabled"
+#	"on"
 #
 # Non-zero number strings are also interpreted as true-values.
 #
@@ -427,10 +559,13 @@ ensure()
 	local VAR="${1}"
 	shift
 
+	[[ "${VAR}" =~ ^[a-zA-Z0-9_]+$ ]] || fail "Invalid variable name [${VAR}]"
+
+	local X=""
 	local RESULT=""
 
 	if [ -v "${VAR}" ] ; then
-		RESULT="${!VAR}" &>/dev/null || fail "Illegal variable name [${VAR}]"
+		RESULT="${!VAR}" &>/dev/null || fail "Invalid variable name [${VAR}]"
 
 		# Identify if this is one of the types of variables
 		# that we have problems with
@@ -441,13 +576,338 @@ ensure()
 			case "${DECL}" in
 				# Ignore arrays and read-only variables
 				*a* | *A* | *r* ) return 0 ;;
+				*x* ) X="x" ;;
 			esac
 		fi
 	fi
 
 	# No value or an empty one? Use the alternate default
-	[ -z "${RESULT}" ] && [ ${#} -ge 1 ] && RESULT=("${@}")
+	if [ -z "${RESULT}" ] ; then
+		if [ ${#} -ge 1 ] ; then
+			RESULT="${1}"
+		else
+			# No express default given... is there
+			# a default value for this variable?
+			local DEFAULT="DEFAULT_${VAR}"
+			[ -v "${DEFAULT}" ] && RESULT="${!DEFAULT}"
+		fi
+	fi
 
-	# Declare it, keeping its attributes!
-	declare -Ig ${VAR}="${RESULT}"
+	# Declare it, keeping its export status!
+	declare -g${X} ${VAR}="${RESULT}"
+}
+
+#
+# usage: require_exe EXE
+#
+# Checkes for the existence of the given executables. If an executable
+# name doesn't contain any slashes, it checks the PATH (using type -P).
+#
+# If an executable name contains slashes, then it must exist in that
+# exact location, be a regular file, and both readable and executable
+# (as per is_file_executable).
+#
+require_exe()
+{
+	[ ${#} -gt 1 ] || return 0
+
+	for EXE in "${@}" ; do
+		if [[ "${EXE}" =~ / ]] ; then
+			local RC=0
+			is_file_executable "${EXE}" || RC=${?}
+			[ ${RC} -eq 0 ] && continue
+			file_error "${EXE}" "${RC}"
+			exit 1
+		else
+			type -P "${EXE}" &>/dev/null || fail "Could not find the required executable [${EXE}] in the PATH"
+		fi
+	done
+	return 0
+}
+
+#
+# usage: __get_time_mul (D|H|M|S)
+#
+# Return the number of seconds in the given time
+# scale:
+#
+#	 D = days = 86,400
+#	 H = hours = 3,600
+#	 M = minutes = 60
+#	 S = seconds = 1
+#
+# This is a utility function used by the timestring
+# conversion functions
+#
+__get_time_mul()
+{
+	local TAG="${1^^}"
+
+	[[ "${TAG}" =~ ^[HDMS]$ ]] || return 1
+	local DURATION_S=1
+	local DURATION_M=$(( DURATION_S * 60 ))
+	local DURATION_H=$(( DURATION_M * 60 ))
+	local DURATION_D=$(( DURATION_H * 24 ))
+
+	local VAR="DURATION_${TAG}"
+	echo -n "${!VAR}"
+}
+
+#
+# usage: secs_to_timestr SECONDS
+#
+# Converts a number of seconds into a timespec
+# of the form:
+#
+#	  ${days}d${hours}h${mins}m${secs}s
+#
+# Only positive integers are supported. Note that
+# all components are optional and will not be
+# rendered if their quantity is 0
+#
+secs_to_timestr()
+{
+	local STR="${1}"
+	local NUM="(0|[1-9][0-9]*)"
+
+	[ -n "${STR}" ] || return 1
+	[[ "${STR}" =~ ^${NUM}$ ]] || return 1
+
+	local RET=""
+	local SIZE=0
+	local MUL=0
+	local SECS=${STR}
+	for C in D H M S ; do
+		MUL=$(__get_time_mul "${C}")
+		(( SIZE = ( SECS / MUL ) ))
+		[ ${SIZE} -gt 0 ] && RET+="${SIZE}${C}"
+		(( SECS -= ( SIZE * MUL ) ))
+	done
+
+	echo -n ${RET,,}
+	return 0
+}
+
+#
+# usage: timestr_to_secs TIMESPEC
+#
+# Converts a TIMESPEC of the form:
+#
+#	  ${days}d${hours}h${mins}m${secs}s
+#
+# To the total number of seconds it represents.
+#
+timestr_to_secs()
+{
+	local STR="${1}"
+	local NUM="(0|[1-9][0-9]*)"
+
+	# It could be a time string, so parse it out
+	[ -n "${STR}" ] || return 1
+	[[ "${STR^^}" =~ ^(${NUM}D)?(${NUM}H)?(${NUM}M)?(${NUM}S)?$ ]] || return 1
+
+	local PARTS=( "${BASH_REMATCH[@]:1}" )
+	[ ${#PARTS[@]} -ge 1 ] || return 1
+
+	local SIZE=0
+	local MUL=0
+	local SECS=0
+	for (( i = 0 ; i < ${#PARTS[@]} ; i++ )) ; do
+		[[ "${PARTS[i]}" =~ ^${NUM}([DHMS])$ ]] || continue
+		SIZE=${BASH_REMATCH[1]}
+		MUL=$(__get_time_mul "${BASH_REMATCH[2]}")
+		(( SECS += SIZE * MUL ))
+	done
+
+	echo -n ${SECS}
+	return 0
+}
+
+#
+# usage: is_valid_hostname HOSTNAME
+#
+# Check that the given hostname is valid as per RFC-1123,
+# and return 0 if it is, or a non-0 status if it is not.
+#
+is_valid_hostname()
+{
+	local NAME="${1,,}"
+	[[ "${NAME}" =~ ^([a-z0-9][-a-z0-9]*)?[a-z0-9]([.]([a-z0-9][-a-z0-9]*)?[a-z0-9])*$ ]] || return 1
+	return 0
+}
+
+#
+# usage: is_valid_port PORT
+#
+# Check that the given PORT is a number between
+# 1 and 65535 (inclusive).
+#
+is_valid_port()
+{
+	local PORT="${1}"
+	[[ "${PORT}" =~ ^(0|[1-9][0-9]*)$ ]] || return 1
+	[ ${PORT} -gt 0 ] || return 1
+	[ ${PORT} -lt 65536 ] || return 1
+	return 0
+}
+
+#
+# usage: is_valid_ip IPADDRESS
+#
+# Checks that the given IPADDRESS is a valid
+# IPv4 address (i.e. a 4-octet number).
+#
+is_valid_ipv4()
+{
+	local IP="${1}"
+	local PARTS=()
+	IFS="." PARTS=(${IP})
+
+	# Is it made of 4 parts separated by dots?
+	[ ${#PARTS[@]} -eq 4 ] || return 1
+
+	for p in "${PARTS[@]}" ; do
+
+		# Is it a 1-3 digit number?
+		[[ "${p}" =~ ^[0-9]{1,3}$ ]] || return 1
+
+		# Don't allow leading zeros
+		[[ "${p}" =~ ^0[0-9]{1,2}$ ]] && return 1
+
+		# Is it in [0..255]?
+		[ ${p} -ge 0 ] || return 1
+		[ ${p} -le 255 ] || return 1
+	done
+
+	# Checks out!
+	return 0
+}
+
+#
+# usage: render_password [LENGTH]
+#
+# Generate a password made of random alphanumeric
+# characters (i.e. only letters and digits) of
+# the given length (default if not given is 32).
+#
+render_password()
+{
+	local LENGTH="${1:-}"
+
+	[[ "${LENGTH}" =~ ^[1-9][0-9]*$ ]] || LENGTH=32
+
+	local V=""
+	read V REST < <(tr -dc '[:alnum:]' < /dev/urandom | fold -w ${LENGTH} | head -1)
+	echo -n "${V}"
+}
+
+#
+# usage: ini_list_sections FILE
+#
+# List the sections (i.e. [section-name]...) from an INI file
+#
+ini_list_sections()
+{
+	local FILE="${1}"
+	is_file "${FILE}" || return 1
+	grep "^[[:space:]]*\[[^\]\+]" "${FILE}" | sed -e 's/^\s*\[//g' -e 's/\].*$//g'
+}
+
+#
+# usage: ini_has_section FILE SECTION
+#
+# Returns 0 if the INI file has the named section, non-0 otherwise
+#
+ini_has_section()
+{
+	local FILE="${1}"
+	local SECTION="${2}"
+	[ -n "${SECTION}" ] || return 1
+	ini_list_sections "${FILE}" | grep -q "${SECTION}"
+}
+
+#
+# usage: ini_get_value FILE SECTION KEY
+#
+# Outputs the value corresponding to KEY in the
+# given SECTION of the INI FILE. Returns non-0
+# if the file doesn't exist, if the SECTION name
+# is the empty string or doesn't exist, or if
+# the KEY is the empty string.
+#
+ini_get_value()
+{
+	local FILE="${1}"
+	local SECTION="${2}"
+	local KEY="${3}"
+
+	[ -n "${KEY}" ] || return 1
+	ini_has_section "${FILE}" "${SECTION}" || return 1
+
+	local KVP="$(sed -nr "/^\s*\[${SECTION}\]/,/\[/{/^\s*${KEY}\s*=/p}" "${FILE}" | tail -1)"
+	echo -n "${KVP#*=}" | sed -e 's;^[[:space:]]*;;g' -e 's;[[:space:]]*$;;g'
+}
+
+#
+# usage: urlencode STRING
+#
+# Encode the given string using the URLEncode mechanism
+#
+urlencode()
+{
+	local STR="${1}"
+	local LEN=${#STR}
+	local RESULT=""
+	local POS C O
+
+	for (( POS=0 ; POS < LEN ; POS++ )); do
+		C=${STR:$POS:1}
+		case "${C}" in
+			[-_.~a-zA-Z0-9/] ) O="${C}" ;;
+			* ) printf -v O '%%%02x' "'${C}"
+		esac
+		RESULT+="${O}"
+	done
+	echo "${RESULT}"
+}
+
+#
+# usage: execute COMMAND [ARGS...]
+#
+# Run the given command using an exec call, with the given arguments
+#
+execute()
+{
+	[ ${#} -gt 0 ] || fail "No command given to execute"
+	running "${@@Q}"
+	exec "${@}"
+}
+
+#
+# usage: sanitize_pathspec PATHSPEC [SEP]
+#
+# Sanitizes a path chain specification (i.e.
+# a series of paths separated by SEP) such
+# that every element exists only once, there
+# are no leading or trailing separators, and no
+# double-separators.
+#
+# The default separator is the colon (:).
+#
+sanitize_pathspec()
+{
+	local LP="${1}"
+	local SEP="${2:-:}"
+	local L="$(tr "${SEP}" '\n' <<< "${LP}" | sort -u | sed -e '/^\s*$/d')"
+	local A=()
+	IFS=":" read -a A <<< "${LP}" || true
+	local FIRST="true"
+	for n in "${A[@]}" ; do
+		grep -q "^${n}$" <<< "${L}" || continue
+		[ -n "${n}" ] || continue
+		${FIRST} || echo -n "${SEP}"
+		echo -n "${n}"
+		L="$(grep -v "^${n}$" <<< "${L}")"
+		FIRST="false"
+	done
 }
