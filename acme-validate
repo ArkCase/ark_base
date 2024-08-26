@@ -3,7 +3,7 @@
 set -euo pipefail
 source /.functions
 
-ensure SSL_DIR "/.ssl"
+set_or_default SSL_DIR "/.ssl"
 
 require_exe openssl sha256sum
 
@@ -43,7 +43,7 @@ openssl verify -CAfile "${SSL_DIR}/ca-root.pem" "${SSL_DIR}/ca-int.pem" &>/dev/n
 openssl verify -CAfile <(cat "${SSL_DIR}/ca-int.pem" "${SSL_DIR}/ca-root.pem") "${SSL_DIR}/cert.pem" &>/dev/null || fail "The certificate isn't signed by the intermediate CA"
 
 # Are the int and root certs deployed to the anchor directories?
-ensure ANCHORS "/etc/pki/ca-trust/source/anchors"
+set_or_default ANCHORS "/etc/pki/ca-trust/source/anchors"
 
 for n in ca-int ca-root ; do
 	MASTER="${SSL_DIR}/${n}.pem"

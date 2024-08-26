@@ -540,7 +540,7 @@ to_boolean()
 }
 
 #
-# usage: ensure VAR [DEFAULT]
+# usage: set_or_default VAR [DEFAULT]
 #
 # Ensures that the variable VAR has a value assigned.
 #
@@ -552,7 +552,7 @@ to_boolean()
 # Read-only variables and arrays of any kind will be ignored, and
 # all variables declared will be global in the script's scope.
 #
-ensure()
+set_or_default()
 {
 	[ ${#} -ge 1 ] || return 1
 

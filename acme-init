@@ -207,18 +207,18 @@ fi
 [ -n "${ACM_GROUP}" ] || fail "The ACM_GROUP environment variable is REQUIRED"
 getent group "${ACM_GROUP}" &>/dev/null || fail "The group [${ACM_GROUP}] does not exist"
 
-ensure SSL_DIR "/.ssl"
-ensure SSL_TRUSTS_DIR "/.trusts"
-ensure PKI_HOME "/etc/pki"
-ensure ANCHORS "${PKI_HOME}/ca-trust/source/anchors"
-ensure CACERTS "${PKI_HOME}/java/cacerts"
+set_or_default SSL_DIR "/.ssl"
+set_or_default SSL_TRUSTS_DIR "/.trusts"
+set_or_default PKI_HOME "/etc/pki"
+set_or_default ANCHORS "${PKI_HOME}/ca-trust/source/anchors"
+set_or_default CACERTS "${PKI_HOME}/java/cacerts"
 
-ensure CACERTS_PASS "changeit"
-ensure ACME_URL "https://acme:9000"
-ensure ACME_KEY_ALIAS "acme"
-ensure ACME_WAIT "false"
-ensure ACME_WAIT_MARKER "${SSL_DIR}/.acme-ready"
-ensure ACME_WAIT_TIMEOUT "$(timestr_to_secs 20m)"
+set_or_default CACERTS_PASS "changeit"
+set_or_default ACME_URL "https://acme:9000"
+set_or_default ACME_KEY_ALIAS "acme"
+set_or_default ACME_WAIT "false"
+set_or_default ACME_WAIT_MARKER "${SSL_DIR}/.acme-ready"
+set_or_default ACME_WAIT_TIMEOUT "$(timestr_to_secs 20m)"
 
 # Validate the URL
 [[ "${ACME_URL}" =~ ^http(s)?://([^:/]+)(:([1-9][0-9]*))?(/.*)?$ ]] || fail "Malformed URL for the ACME CA: [${ACME_URL}]"
@@ -373,7 +373,7 @@ fi
 # Download our new certificates from the ACME instance
 #
 ################################################################################
-ensure ACME_PASSWORD_FILE "/.acme.password"
+set_or_default ACME_PASSWORD_FILE "/.acme.password"
 if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	################################################################################
 	#
@@ -409,7 +409,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 		# associated to a pod. They *may* be the same but
 		# aren't required to be. Thus, we check to see if they're
 		# the same, to avoid adding duplicate values
-		ensure ACME_SERVICE_NAME "${SERVICE}"
+		set_or_default ACME_SERVICE_NAME "${SERVICE}"
 		if [ "${ACME_SERVICE_NAME}" != "${SERVICE}" ] ; then
 			if [ -n "${NAMESPACE}" ] ; then
 				if [ -n "${CLUSTER_DOMAIN}" ] ; then
