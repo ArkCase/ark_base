@@ -626,25 +626,11 @@ to_array()
 	return 0
 }
 
-#
-# usage: set_or_default VAR [DEFAULT]
-#
-# Ensures that the variable VAR has a value assigned.
-#
-# If the variable VAR is undefined or has an empty value, it will
-# be set using the value DEFAULT, or the empty string if it wasn't
-# provided. The variable's attributes (i.e. export, uppercase,
-# lowercase, etc.) will be preserved if it's already been declared.
-#
-# Read-only variables and arrays of any kind will be ignored, and
-# all variables declared will be global in the script's scope.
-#
-set_or_default()
+__var_set_tool()
 {
 	[ ${#} -ge 1 ] || return 1
 
 	local __VAR="${1}"
-	shift
 
 	[[ "${__VAR}" =~ ^[a-zA-Z0-9_]+$ ]] || fail "Invalid variable name [${__VAR}]"
 
@@ -665,8 +651,8 @@ set_or_default()
 
 	# No value or an empty one? Use the alternate default
 	if [ -z "${__RESULT}" ] ; then
-		if [ ${#} -ge 1 ] ; then
-			__RESULT="${1}"
+		if [ ${#} -ge 2 ] ; then
+			__RESULT="${2}"
 		else
 			# No express default given... is there
 			# a default value for this variable?
@@ -675,8 +661,41 @@ set_or_default()
 		fi
 	fi
 
+	# If we've been given a function to process the result
+	# before we return it, we use it
+	[ ${#} -ge 3 ] && __RESULT="$("${3}" "${__RESULT}")"
+
 	# Declare it, keeping its export status!
 	declare -g${__X} ${__VAR}="${__RESULT}"
+}
+
+#
+# usage: set_or_default VAR [DEFAULT]
+#
+# Ensures that the variable VAR has a value assigned.
+#
+# If the variable VAR is undefined or has an empty value, it will
+# be set using the value DEFAULT, or the empty string if it wasn't
+# provided. The variable's attributes (i.e. export, uppercase,
+# lowercase, etc.) will be preserved if it's already been declared.
+#
+# Read-only variables and arrays of any kind will be ignored, and
+# all variables declared will be global in the script's scope.
+#
+set_or_default()
+{
+	__var_set_tool "${1}" "${2:-}"
+}
+
+#
+# usage: set_as_boolean VAR [DEFAULT]
+#
+# Similar to set_or_default, but the final value for the
+# variable may only be either "true" or "false"
+#
+set_as_boolean()
+{
+	__var_set_tool "${1}" "${2:-false}" to_boolean
 }
 
 #
@@ -1110,7 +1129,14 @@ read_setting()
 redirect_logs()
 {
 	local __LOG="${1}"
-	exec >> >(tee -a "${__LOG}")
+	local __DIR="$(dirname "${__LOG}")"
+
+	if ! is_dir_readwrite "${__DIR}" ; then
+		warn "Could not redirect the logs to [${__LOG}]: $(dir_error "${__DIR}" "${?}")"
+		return 0
+	fi
+
+	exec >> >(tee -a --output-error=exit "${__LOG}")
 	exec 2>&1
 	say "Logs redirected to [${__LOG}]"
 }
@@ -1141,4 +1167,53 @@ init_ssl()
 check_ssl()
 {
 	__ssl validate
+}
+
+#
+# usage: poll_url URL [MAX_WAIT [POLL_WAIT]]
+#
+# Poll the given URL with cURL, for at most
+# MAX_WAIT interval (may be specified as a time
+# string or the number of seconds, default 5
+# minutes), sleeping for POLL_WAIT (default 1)
+# between polling attempts.
+#
+poll_url()
+{
+	local __URL="${1}"
+
+	local __MAX_WAIT="${2:-"5m"}"
+	if [[ ! "${__MAX_WAIT}" =~ ^[1-9][0-9]*$ ]] ; then
+		# If the conversion doesn't work, use the default 5 minute clock
+		__MAX_WAIT="$(timestr_to_secs "${__MAX_WAIT}")" || __MAX_WAIT="300"
+	fi
+	local __MAX_WAIT_STR="$(secs_to_timestr "${__MAX_WAIT}")"
+
+	local __POLL_WAIT="${3:-"1"}"
+
+	local __START="$(date +%s)"
+	waiting "Starting the polling cycle for [${__URL}] (for up to ${__MAX_WAIT_STR})..."
+	local __NOW="${START}"
+	local __DURATION="0"
+	while true ; do
+		curl -fsSL -m 5 "${__URL}" &>/dev/null && break
+
+		__NOW="$(date +%s)"
+		__DURATION=$(( __NOW - __START )) || true
+
+		if [ ${__DURATION} -ge ${__MAX_WAIT} ] ; then
+			err "Timed out waiting for the URL [${__URL}] to come up (waited for ${__MAX_WAIT_STR})"
+			return 1
+		fi
+		# If sleep didn't succeed, it means it got signaled, which
+		# Means we need to stop what we're doing and puke out
+		if ! sleep ${__POLL_WAIT} ; then
+			err "Sleep interrupted, can't continue polling (elapsed: $(secs_to_timestr "${__DURATION}"))"
+			return 1
+		fi
+	done
+	__NOW="$(date +%s)"
+	__DURATION="$(secs_to_timestr "$(( __NOW - __START ))")"
+	ok "The URL [${__URL}] responded after ${__DURATION:-0s}"
+	return 0
 }
