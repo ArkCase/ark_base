@@ -585,6 +585,14 @@ to_list()
 }
 
 #
+# usage: csv_to_list < OUTPUT
+#
+csv_to_list()
+{
+	tr ',' '\n' | sed -e '/^\s*$/d'
+}
+
+#
 # usage: to_array VAR
 #
 # Convert the given variable into an array, split on
@@ -942,14 +950,78 @@ urlencode()
 	local __RESULT=""
 
 	for (( __POS=0 ; __POS < __LEN ; __POS++ )); do
-		__C=${__STR:${__POS}:1}
+		__C="${__STR:${__POS}:1}"
 		case "${__C}" in
-			[-_.~a-zA-Z0-9/] ) __O="${__C}" ;;
-			* ) printf -v __O '%%%02x' "'${__C}"
+			[-_.~a-zA-Z0-9] ) __O="${__C}" ;;
+			* ) printf -v __O '%%%02x' "'${__C}" ; __O="${__O^^}" ;;
 		esac
 		__RESULT+="${__O}"
 	done
-	echo "${__RESULT}"
+	echo -n "${__RESULT}"
+}
+
+#
+# usage: urlencode_query STRING
+#
+# Encode the given string using the URLEncode mechanism for URL Queries (i.e. spaces == '+')
+#
+urlencode_query()
+{
+	local __STR="$(urlencode "${1}")"
+	echo -n "${__STR//%20/+}"
+}
+
+#
+# usage: urldecode STRING
+#
+# Decode the given string using the URLDecode mechanism
+#
+urldecode()
+{
+	local __STR="${1//+/ }"
+	printf "%b" "${__STR//%/\\x}"
+}
+
+#
+# usage: urldecode_query STRING
+#
+# Decode the given string using the URLDecode mechanism for URL Queries (i.e. spaces == '+')
+#
+urldecode_query()
+{
+	urldecode "${@}"
+}
+
+#
+# usage: xml_escape STRING
+#
+# Encode the given string using the XML escape mechanism
+#
+xml_escape()
+{
+	local __V="${1}"
+	__V="${__V//&/&amp;}"
+	__V="${__V//</&lt;}"
+	__V="${__V//>/&gt;}"
+	__V="${__V//\"/&quot;}"
+	__V="${__V//\'/&apos;}"
+	echo -n "${__V}"
+}
+
+#
+# usage: xml_unescape STRING
+#
+# Dencode the given string using the XML unescape mechanism
+#
+xml_unescape()
+{
+	local __V="${1}"
+	__V="${__V//&lt;/<}"
+	__V="${__V//&gt;/>}"
+	__V="${__V//&quot;/\"}"
+	__V="${__V//&apos;/\'}"
+	__V="${__V//&amp;/&}"
+	echo -n "${__V}"
 }
 
 #
