@@ -65,6 +65,11 @@ running()
 	say "🚀 ${@}"
 }
 
+eyes()
+{
+	say "👀 ${@}"
+}
+
 #
 # usage: [EXIT_VALUE=X] fail [args ...]
 #
