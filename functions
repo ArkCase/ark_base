@@ -78,10 +78,16 @@ fail()
 	exit ${EXIT_CODE:-1}
 }
 
+#
+# usage: quit [args ...]
+#
+# End processing (via a call to exit) with the exit code
+# 0, and outputting the given message using the err function.
+#
 quit()
 {
 	say "🚪 ${@}"
-	exit ${EXIT_CODE:-0}
+	exit 0
 }
 
 #
@@ -94,9 +100,9 @@ quit()
 #
 define_base_vars()
 {
-	local SCRIPT="$(readlink -f "${BASH_ARGV0:-${BASH_SOURCE:-${0}}}")"
-	declare -gx __BASEDIR="$(dirname "${SCRIPT}")"
-	declare -gx __SCRIPT="$(basename "${SCRIPT}")"
+	local __SCRIPT="$(readlink -f "${BASH_ARGV0:-${BASH_SOURCE:-${0}}}")"
+	declare -gx __BASEDIR="$(dirname "${__SCRIPT}")"
+	declare -gx __SCRIPT="$(basename "${__SCRIPT}")"
 }
 
 #
@@ -115,11 +121,11 @@ define_base_vars()
 #
 is_dir()
 {
-	local DIR="${1}"
-	[ -n "${DIR}" ] || return 1
-	[ -e "${DIR}" ] || return 2
-	[ -d "${DIR}" ] || return 3
-	[ -x "${DIR}" ] || return 4
+	local __DIR="${1}"
+	[ -n "${__DIR}" ] || return 1
+	[ -e "${__DIR}" ] || return 2
+	[ -d "${__DIR}" ] || return 3
+	[ -x "${__DIR}" ] || return 4
 	return 0
 }
 
@@ -140,9 +146,9 @@ is_dir()
 #
 is_dir_readable()
 {
-	local DIR="${1}"
-	is_dir "${1}" || return ${?}
-	[ -r "${DIR}" ] || return 5
+	local __DIR="${1}"
+	is_dir "${__DIR}" || return ${?}
+	[ -r "${__DIR}" ] || return 5
 	return 0
 }
 
@@ -163,9 +169,9 @@ is_dir_readable()
 #
 is_dir_writable()
 {
-	local DIR="${1}"
-	is_dir "${1}" || return ${?}
-	[ -w "${DIR}" ] || return 6
+	local __DIR="${1}"
+	is_dir "${__DIR}" || return ${?}
+	[ -w "${__DIR}" ] || return 6
 	return 0
 }
 
@@ -187,10 +193,10 @@ is_dir_writable()
 #
 is_dir_readwrite()
 {
-	local DIR="${1}"
-	is_dir "${1}" || return ${?}
-	[ -r "${DIR}" ] || return 5
-	[ -w "${DIR}" ] || return 6
+	local __DIR="${1}"
+	is_dir "${__DIR}" || return ${?}
+	[ -r "${__DIR}" ] || return 5
+	[ -w "${__DIR}" ] || return 6
 	return 0
 }
 
@@ -203,20 +209,20 @@ is_dir_readwrite()
 #
 dir_error()
 {
-	local DIR="${1}"
-	local CODE="${2}"
-	local MSG=""
-	case "${CODE}" in
+	local __DIR="${1}"
+	local __CODE="${2}"
+	local __MSG=""
+	case "${__CODE}" in
 		0 ) ;;
-		1 ) MSG="The directory name may not be the empty string" ;;
-		2 ) MSG="The directory [${DIR}] does not exist" ;;
-		3 ) MSG="The path [${DIR}] is not a directory" ;;
-		4 ) MSG="The directory [${DIR}] is not executable" ;;
-		5 ) MSG="The directory [${DIR}] is not readable" ;;
-		6 ) MSG="The directory [${DIR}] is not writable" ;;
-		* ) MSG="Unknown error code [${CODE}] when examining directory [${DIR}]" ;;
+		1 ) __MSG="The directory name may not be the empty string" ;;
+		2 ) __MSG="The directory [${__DIR}] does not exist" ;;
+		3 ) __MSG="The path [${__DIR}] is not a directory" ;;
+		4 ) __MSG="The directory [${__DIR}] is not executable" ;;
+		5 ) __MSG="The directory [${__DIR}] is not readable" ;;
+		6 ) __MSG="The directory [${__DIR}] is not writable" ;;
+		* ) __MSG="Unknown error code [${__CODE}] when examining directory [${__DIR}]" ;;
 	esac
-	[ -n "${MSG}" ] && err "${MSG}"
+	[ -n "${__MSG}" ] && err "${__MSG}"
 }
 #
 # usage: fail_dir DIR CODE
@@ -227,11 +233,11 @@ dir_error()
 #
 fail_dir()
 {
-	local DIR="${1}"
-	local CODE="${2}"
-	local MSG="$(dir_error "${DIR}" "${CODE}")"
+	local __DIR="${1}"
+	local __CODE="${2}"
+	local __MSG="$(dir_error "${__DIR}" "${__CODE}")"
 
-	echo -e "${MSG}"
+	echo -e "${__MSG}"
 	exit ${EXIT_CODE:-1}
 }
 
@@ -248,18 +254,18 @@ fail_dir()
 #
 ensure_dir()
 {
-	local DIR="${1}"
+	local __DIR="${1}"
 
-	is_dir_readwrite "${DIR}" && return 0
+	is_dir_readwrite "${__DIR}" && return 0
 
-	mkdir -p "${DIR}" || fail "The directory [${DIR}] did not exist and could not be created"
+	mkdir -p "${__DIR}" || fail "The directory [${__DIR}] did not exist and could not be created"
 }
 
 __require_dir()
 {
-	local FUNC="${1}"
-	local DIR="${2}"
-	"${FUNC}" "${DIR}" || fail_dir "${DIR}" "${!}"
+	local __FUNC="${1}"
+	local __DIR="${2}"
+	"${__FUNC}" "${__DIR}" || fail_dir "${__DIR}" "${?}"
 }
 
 #
@@ -327,10 +333,10 @@ require_dir_readwrite()
 #
 is_file()
 {
-	local FILE="${1}"
-	[ -n "${FILE}" ] || return 1
-	[ -e "${FILE}" ] || return 2
-	[ -f "${FILE}" ] || return 3
+	local __FILE="${1}"
+	[ -n "${__FILE}" ] || return 1
+	[ -e "${__FILE}" ] || return 2
+	[ -f "${__FILE}" ] || return 3
 	return 0
 }
 
@@ -350,9 +356,9 @@ is_file()
 #
 is_file_readable()
 {
-	local FILE="${1}"
-	is_file "${1}" || return ${?}
-	[ -r "${FILE}" ] || return 4
+	local __FILE="${1}"
+	is_file "${__FILE}" || return ${?}
+	[ -r "${__FILE}" ] || return 4
 	return 0
 }
 
@@ -372,9 +378,9 @@ is_file_readable()
 #
 is_file_writable()
 {
-	local FILE="${1}"
-	is_file "${1}" || return ${?}
-	[ -w "${FILE}" ] || return 5
+	local __FILE="${1}"
+	is_file "${__FILE}" || return ${?}
+	[ -w "${__FILE}" ] || return 5
 	return 0
 }
 
@@ -395,10 +401,10 @@ is_file_writable()
 #
 is_file_readwrite()
 {
-	local FILE="${1}"
-	is_file "${1}" || return ${?}
-	[ -r "${FILE}" ] || return 3
-	[ -w "${FILE}" ] || return 4
+	local __FILE="${1}"
+	is_file "${__FILE}" || return ${?}
+	[ -r "${__FILE}" ] || return 3
+	[ -w "${__FILE}" ] || return 4
 	return 0
 }
 
@@ -420,9 +426,9 @@ is_file_readwrite()
 #
 is_file_executable()
 {
-	local FILE="${1}"
-	is_file_readable "${1}" || return ${?}
-	[ -x "${FILE}" ] || return 5
+	local __FILE="${1}"
+	is_file_readable "${__FILE}" || return ${?}
+	[ -x "${__FILE}" ] || return 5
 	return 0
 }
 
@@ -435,20 +441,20 @@ is_file_executable()
 #
 file_error()
 {
-	local FILE="${1}"
-	local CODE="${2}"
-	local MSG=""
-	case "${CODE}" in
+	local __FILE="${1}"
+	local __CODE="${2}"
+	local __MSG=""
+	case "${__CODE}" in
 		0 ) ;;
-		1 ) MSG="The file name may not be the empty string" ;;
-		2 ) MSG="The file [${FILE}] does not exist" ;;
-		3 ) MSG="The path [${FILE}] is not a regular file" ;;
-		4 ) MSG="The file [${FILE}] is not readable" ;;
-		5 ) MSG="The file [${FILE}] is not writable" ;;
-		6 ) MSG="The file [${FILE}] is not executable" ;;
-		* ) MSG="Unknown error code [${CODE}] when examining file [${FILE}]" ;;
+		1 ) __MSG="The file name may not be the empty string" ;;
+		2 ) __MSG="The file [${__FILE}] does not exist" ;;
+		3 ) __MSG="The path [${__FILE}] is not a regular file" ;;
+		4 ) __MSG="The file [${__FILE}] is not readable" ;;
+		5 ) __MSG="The file [${__FILE}] is not writable" ;;
+		6 ) __MSG="The file [${__FILE}] is not executable" ;;
+		* ) __MSG="Unknown error code [${__CODE}] when examining file [${__FILE}]" ;;
 	esac
-	[ -n "${MSG}" ] && err "${MSG}"
+	[ -n "${__MSG}" ] && err "${__MSG}"
 }
 
 #
@@ -460,11 +466,11 @@ file_error()
 #
 fail_file()
 {
-	local FILE="${1}"
-	local CODE="${2}"
-	local MSG="$(file_error "${FILE}" "${CODE}")"
+	local __FILE="${1}"
+	local __CODE="${2}"
+	local __MSG="$(file_error "${__FILE}" "${__CODE}")"
 
-	echo -e "${MSG}"
+	echo -e "${__MSG}"
 	exit ${EXIT_CODE:-1}
 }
 
@@ -479,8 +485,9 @@ fail_file()
 #
 is_help_flag()
 {
-	for n in "${@}" ; do
-		case "${n}" in
+	local __n=""
+	for __n in "${@}" ; do
+		case "${__n}" in
 			"-?" | "-h" | "--help" ) return 0 ;;
 			* ) ;;
 		esac
@@ -510,15 +517,15 @@ is_help_flag()
 #
 as_boolean()
 {
-	local V="${1:-""}"
+	local __V="${1:-""}"
 
 	# Is this a known true-equivalent string?
-	case "${V,,}" in
+	case "${__V,,}" in
 		true | t | yes | y | enable | enabled | on ) return 0 ;;
 	esac
 
 	# Is it a non-zero number?
-	[[ "${V}" =~ ^-?[1-9][0-9]*$ ]] && [ ${V} -ne 0 ] && return 0
+	[[ "${__V}" =~ ^-?[1-9][0-9]*$ ]] && [ ${__V} -ne 0 ] && return 0
 
 	# Then this is certainly a false-value
 	return 1
@@ -533,9 +540,80 @@ as_boolean()
 #
 to_boolean()
 {
-	local V="false"
-	as_boolean "${@}" && V="true"
-	echo -n "${V}"
+	local __V="false"
+	as_boolean "${@}" && __V="true"
+	echo -n "${__V}"
+	return 0
+}
+
+__get_var_flags()
+{
+	local __VAR="${1}"
+	local __DECL="$(declare -p "${__VAR}" 2>/dev/null)" || return 1
+	local __RE="^declare -(-|([aAfFiIlnrtux]+)) ${__VAR}"
+	[[ "${__DECL}" =~ ${__RE} ]] && echo -n "${BASH_REMATCH[2]}"
+	return 0
+}
+
+#
+# usage: is_array VAR
+#
+# Checks to see if the given variable is an array (indexed
+# or associative) and returns 0 if it is, or non-0 otherwise.
+#
+is_array()
+{
+	local __VAR="${1}"
+	case "$(__get_var_flags "${__VAR}")" in
+		*a* | *A* ) return 0 ;;
+	esac
+	return 1
+}
+
+#
+# usage: to_list OUTPUT
+#
+# Outputs the variable's contents as a list, one per line,
+# ready for conversion into an array. If the variable is
+# already an array, it's iterated over and each element
+# is output on its own line.
+#
+to_list()
+{
+	# This trick allows us to respect quotes
+	/usr/bin/xargs -n1 < <(echo -n "${@}")
+}
+
+#
+# usage: to_array VAR
+#
+# Convert the given variable into an array, split on
+# spaces, and respecting quotes (single and double).
+#
+to_array()
+{
+	# set -x
+	local __VAR="${1}"
+	local __EXPORT="false"
+	case "$(__get_var_flags "${__VAR}")" in
+		# Ignore arrays and read-only variables
+		*a* | *A* ) return 0 ;;
+		*r* ) return 1 ;;
+
+		# If it's an exported variable, keep track of it
+		*x* ) __EXPORT="true" ;;
+	esac
+
+	if [ -v "${__VAR}" ] ; then
+		# Do the conversion
+		readarray -t "${__VAR}" < <(to_list "${!__VAR}")
+
+		# Restore the export flag
+		"${__EXPORT}" && declare -x "${__VAR}"
+	else
+		# Do the declaration
+		declare -ga "${__VAR}"
+	fi
 	return 0
 }
 
@@ -556,45 +634,40 @@ set_or_default()
 {
 	[ ${#} -ge 1 ] || return 1
 
-	local VAR="${1}"
+	local __VAR="${1}"
 	shift
 
-	[[ "${VAR}" =~ ^[a-zA-Z0-9_]+$ ]] || fail "Invalid variable name [${VAR}]"
+	[[ "${__VAR}" =~ ^[a-zA-Z0-9_]+$ ]] || fail "Invalid variable name [${__VAR}]"
 
-	local X=""
-	local RESULT=""
+	local __X=""
+	local __RESULT=""
 
-	if [ -v "${VAR}" ] ; then
-		RESULT="${!VAR}" &>/dev/null || fail "Invalid variable name [${VAR}]"
+	if [ -v "${__VAR}" ] ; then
+		__RESULT="${!__VAR}" &>/dev/null || fail "Invalid variable name [${__VAR}]"
 
 		# Identify if this is one of the types of variables
 		# that we have problems with
-		local DECL="$(declare -p "${VAR}")"
-		local RE="^declare -(-|[aAfFiIlnrtux]+) ${VAR}"
-		if [[ "${DECL}" =~ ${RE} ]] ; then
-			DECL="${BASH_REMATCH[1]}"
-			case "${DECL}" in
-				# Ignore arrays and read-only variables
-				*a* | *A* | *r* ) return 0 ;;
-				*x* ) X="x" ;;
-			esac
-		fi
+		case "$(__get_var_flags "${__VAR}")" in
+			# Ignore arrays and read-only variables
+			*a* | *A* | *r* ) return 0 ;;
+			*x* ) __X="x" ;;
+		esac
 	fi
 
 	# No value or an empty one? Use the alternate default
-	if [ -z "${RESULT}" ] ; then
+	if [ -z "${__RESULT}" ] ; then
 		if [ ${#} -ge 1 ] ; then
-			RESULT="${1}"
+			__RESULT="${1}"
 		else
 			# No express default given... is there
 			# a default value for this variable?
-			local DEFAULT="DEFAULT_${VAR}"
-			[ -v "${DEFAULT}" ] && RESULT="${!DEFAULT}"
+			local __DEFAULT="DEFAULT_${__VAR}"
+			[ -v "${__DEFAULT}" ] && __RESULT="${!__DEFAULT}"
 		fi
 	fi
 
 	# Declare it, keeping its export status!
-	declare -g${X} ${VAR}="${RESULT}"
+	declare -g${__X} ${__VAR}="${__RESULT}"
 }
 
 #
@@ -609,19 +682,21 @@ set_or_default()
 #
 require_exe()
 {
-	[ ${#} -gt 1 ] || return 0
+	[ ${#} -ge 1 ] || return 0
 
-	for EXE in "${@}" ; do
-		if [[ "${EXE}" =~ / ]] ; then
-			local RC=0
-			is_file_executable "${EXE}" || RC=${?}
-			[ ${RC} -eq 0 ] && continue
-			file_error "${EXE}" "${RC}"
+	local __EXE=""
+	for __EXE in "${@}" ; do
+		if [[ "${__EXE}" =~ / ]] ; then
+			local __RC=0
+			is_file_executable "${__EXE}" || __RC=${?}
+			[ ${__RC} -eq 0 ] && continue
+			file_error "${__EXE}" "${__RC}"
 			exit 1
 		else
-			type -P "${EXE}" &>/dev/null || fail "Could not find the required executable [${EXE}] in the PATH"
+			type -P "${__EXE}" &>/dev/null || fail "Could not find the required executable [${__EXE}] in the PATH"
 		fi
 	done
+
 	return 0
 }
 
@@ -641,16 +716,16 @@ require_exe()
 #
 __get_time_mul()
 {
-	local TAG="${1^^}"
+	local __TAG="${1^^}"
 
-	[[ "${TAG}" =~ ^[HDMS]$ ]] || return 1
-	local DURATION_S=1
-	local DURATION_M=$(( DURATION_S * 60 ))
-	local DURATION_H=$(( DURATION_M * 60 ))
-	local DURATION_D=$(( DURATION_H * 24 ))
+	[[ "${__TAG}" =~ ^[HDMS]$ ]] || return 1
+	local __DURATION_S=1
+	local __DURATION_M=$(( __DURATION_S * 60 ))
+	local __DURATION_H=$(( __DURATION_M * 60 ))
+	local __DURATION_D=$(( __DURATION_H * 24 ))
 
-	local VAR="DURATION_${TAG}"
-	echo -n "${!VAR}"
+	local __VAR="__DURATION_${__TAG}"
+	echo -n "${!__VAR}"
 }
 
 #
@@ -667,24 +742,25 @@ __get_time_mul()
 #
 secs_to_timestr()
 {
-	local STR="${1}"
-	local NUM="(0|[1-9][0-9]*)"
+	local __STR="${1}"
+	local __NUM="(0|[1-9][0-9]*)"
 
-	[ -n "${STR}" ] || return 1
-	[[ "${STR}" =~ ^${NUM}$ ]] || return 1
+	[ -n "${__STR}" ] || return 1
+	[[ "${__STR}" =~ ^${__NUM}$ ]] || return 1
 
-	local RET=""
-	local SIZE=0
-	local MUL=0
-	local SECS=${STR}
-	for C in D H M S ; do
-		MUL=$(__get_time_mul "${C}")
-		(( SIZE = ( SECS / MUL ) ))
-		[ ${SIZE} -gt 0 ] && RET+="${SIZE}${C}"
-		(( SECS -= ( SIZE * MUL ) ))
+	local __RET=""
+	local __SIZE=0
+	local __MUL=0
+	local __SECS=${__STR}
+	local __C=""
+	for __C in D H M S ; do
+		__MUL=$(__get_time_mul "${__C}")
+		(( __SIZE = ( __SECS / __MUL ) ))
+		[ ${__SIZE} -gt 0 ] && __RET+="${__SIZE}${__C}"
+		(( __SECS -= ( __SIZE * __MUL ) ))
 	done
 
-	echo -n ${RET,,}
+	echo -n ${__RET,,}
 	return 0
 }
 
@@ -699,27 +775,28 @@ secs_to_timestr()
 #
 timestr_to_secs()
 {
-	local STR="${1}"
-	local NUM="(0|[1-9][0-9]*)"
+	local __STR="${1}"
+	local __NUM="(0|[1-9][0-9]*)"
 
 	# It could be a time string, so parse it out
-	[ -n "${STR}" ] || return 1
-	[[ "${STR^^}" =~ ^(${NUM}D)?(${NUM}H)?(${NUM}M)?(${NUM}S)?$ ]] || return 1
+	[ -n "${__STR}" ] || return 1
+	[[ "${__STR^^}" =~ ^(${__NUM}D)?(${__NUM}H)?(${__NUM}M)?(${__NUM}S)?$ ]] || return 1
 
-	local PARTS=( "${BASH_REMATCH[@]:1}" )
-	[ ${#PARTS[@]} -ge 1 ] || return 1
+	local __PARTS=( "${BASH_REMATCH[@]:1}" )
+	[ ${#__PARTS[@]} -ge 1 ] || return 1
 
-	local SIZE=0
-	local MUL=0
-	local SECS=0
-	for (( i = 0 ; i < ${#PARTS[@]} ; i++ )) ; do
-		[[ "${PARTS[i]}" =~ ^${NUM}([DHMS])$ ]] || continue
-		SIZE=${BASH_REMATCH[1]}
-		MUL=$(__get_time_mul "${BASH_REMATCH[2]}")
-		(( SECS += SIZE * MUL ))
+	local __SIZE=0
+	local __MUL=0
+	local __SECS=0
+	local __i=0
+	for (( __i = 0 ; __i < ${#__PARTS[@]} ; __i++ )) ; do
+		[[ "${__PARTS[__i]}" =~ ^${__NUM}([DHMS])$ ]] || continue
+		__SIZE=${BASH_REMATCH[1]}
+		__MUL=$(__get_time_mul "${BASH_REMATCH[2]}")
+		(( __SECS += __SIZE * __MUL ))
 	done
 
-	echo -n ${SECS}
+	echo -n ${__SECS}
 	return 0
 }
 
@@ -731,8 +808,8 @@ timestr_to_secs()
 #
 is_valid_hostname()
 {
-	local NAME="${1,,}"
-	[[ "${NAME}" =~ ^([a-z0-9][-a-z0-9]*)?[a-z0-9]([.]([a-z0-9][-a-z0-9]*)?[a-z0-9])*$ ]] || return 1
+	local __HOSTNAME="${1}"
+	[[ "${__HOSTNAME,,}" =~ ^([a-z0-9][-a-z0-9]*)?[a-z0-9]([.]([a-z0-9][-a-z0-9]*)?[a-z0-9])*$ ]] || return 1
 	return 0
 }
 
@@ -744,10 +821,10 @@ is_valid_hostname()
 #
 is_valid_port()
 {
-	local PORT="${1}"
-	[[ "${PORT}" =~ ^(0|[1-9][0-9]*)$ ]] || return 1
-	[ ${PORT} -gt 0 ] || return 1
-	[ ${PORT} -lt 65536 ] || return 1
+	local __PORT="${1}"
+	[[ "${__PORT}" =~ ^(0|[1-9][0-9]*)$ ]] || return 1
+	[ ${__PORT} -gt 0 ] || return 1
+	[ ${__PORT} -lt 65536 ] || return 1
 	return 0
 }
 
@@ -759,24 +836,25 @@ is_valid_port()
 #
 is_valid_ipv4()
 {
-	local IP="${1}"
-	local PARTS=()
-	IFS="." PARTS=(${IP})
+	local __IP="${1}"
+	local __PARTS=()
+	IFS="." __PARTS=(${__IP})
 
 	# Is it made of 4 parts separated by dots?
-	[ ${#PARTS[@]} -eq 4 ] || return 1
+	[ ${#__PARTS[@]} -eq 4 ] || return 1
 
-	for p in "${PARTS[@]}" ; do
+	local __P=""
+	for __P in "${__PARTS[@]}" ; do
 
 		# Is it a 1-3 digit number?
-		[[ "${p}" =~ ^[0-9]{1,3}$ ]] || return 1
+		[[ "${__P}" =~ ^[0-9]{1,3}$ ]] || return 1
 
 		# Don't allow leading zeros
-		[[ "${p}" =~ ^0[0-9]{1,2}$ ]] && return 1
+		[[ "${__P}" =~ ^0[0-9]{1,2}$ ]] && return 1
 
 		# Is it in [0..255]?
-		[ ${p} -ge 0 ] || return 1
-		[ ${p} -le 255 ] || return 1
+		[ ${__P} -ge 0 ] || return 1
+		[ ${__P} -le 255 ] || return 1
 	done
 
 	# Checks out!
@@ -792,13 +870,13 @@ is_valid_ipv4()
 #
 render_password()
 {
-	local LENGTH="${1:-}"
+	local __LENGTH="${1:-}"
 
-	[[ "${LENGTH}" =~ ^[1-9][0-9]*$ ]] || LENGTH=32
+	[[ "${__LENGTH}" =~ ^[1-9][0-9]*$ ]] || __LENGTH=32
 
-	local V=""
-	read V REST < <(tr -dc '[:alnum:]' < /dev/urandom | fold -w ${LENGTH} | head -1)
-	echo -n "${V}"
+	local __V=""
+	read __V __REST < <(tr -dc '[:alnum:]' < /dev/urandom | fold -w ${__LENGTH} | head -1)
+	echo -n "${__V}"
 }
 
 #
@@ -808,9 +886,9 @@ render_password()
 #
 ini_list_sections()
 {
-	local FILE="${1}"
-	is_file "${FILE}" || return 1
-	grep "^[[:space:]]*\[[^\]\+]" "${FILE}" | sed -e 's/^\s*\[//g' -e 's/\].*$//g'
+	local __FILE="${1}"
+	is_file "${__FILE}" || return 1
+	grep "^[[:space:]]*\[[^\]\+]" "${__FILE}" | sed -e 's/^\s*\[//g' -e 's/\].*$//g'
 }
 
 #
@@ -820,10 +898,10 @@ ini_list_sections()
 #
 ini_has_section()
 {
-	local FILE="${1}"
-	local SECTION="${2}"
-	[ -n "${SECTION}" ] || return 1
-	ini_list_sections "${FILE}" | grep -q "${SECTION}"
+	local __FILE="${1}"
+	local __SECTION="${2}"
+	[ -n "${__SECTION}" ] || return 1
+	ini_list_sections "${__FILE}" | grep -q "${__SECTION}"
 }
 
 #
@@ -837,15 +915,15 @@ ini_has_section()
 #
 ini_get_value()
 {
-	local FILE="${1}"
-	local SECTION="${2}"
-	local KEY="${3}"
+	local __FILE="${1}"
+	local __SECTION="${2}"
+	local __KEY="${3}"
 
-	[ -n "${KEY}" ] || return 1
-	ini_has_section "${FILE}" "${SECTION}" || return 1
+	[ -n "${__KEY}" ] || return 1
+	ini_has_section "${__FILE}" "${__SECTION}" || return 1
 
-	local KVP="$(sed -nr "/^\s*\[${SECTION}\]/,/\[/{/^\s*${KEY}\s*=/p}" "${FILE}" | tail -1)"
-	echo -n "${KVP#*=}" | sed -e 's;^[[:space:]]*;;g' -e 's;[[:space:]]*$;;g'
+	local __KVP="$(sed -nr "/^\s*\[${__SECTION}\]/,/\[/{/^\s*${__KEY}\s*=/p}" "${__FILE}" | tail -1)"
+	echo -n "${__KVP#*=}" | sed -e 's;^[[:space:]]*;;g' -e 's;[[:space:]]*$;;g'
 }
 
 #
@@ -855,20 +933,23 @@ ini_get_value()
 #
 urlencode()
 {
-	local STR="${1}"
-	local LEN=${#STR}
-	local RESULT=""
-	local POS C O
+	local __STR="${1}"
+	local __LEN=${#__STR}
 
-	for (( POS=0 ; POS < LEN ; POS++ )); do
-		C=${STR:$POS:1}
-		case "${C}" in
-			[-_.~a-zA-Z0-9/] ) O="${C}" ;;
-			* ) printf -v O '%%%02x' "'${C}"
+	local __POS=0
+	local __C=""
+	local __O=""
+	local __RESULT=""
+
+	for (( __POS=0 ; __POS < __LEN ; __POS++ )); do
+		__C=${__STR:${__POS}:1}
+		case "${__C}" in
+			[-_.~a-zA-Z0-9/] ) __O="${__C}" ;;
+			* ) printf -v __O '%%%02x' "'${__C}"
 		esac
-		RESULT+="${O}"
+		__RESULT+="${__O}"
 	done
-	echo "${RESULT}"
+	echo "${__RESULT}"
 }
 
 #
@@ -896,18 +977,19 @@ execute()
 #
 sanitize_pathspec()
 {
-	local LP="${1}"
-	local SEP="${2:-:}"
-	local L="$(tr "${SEP}" '\n' <<< "${LP}" | sort -u | sed -e '/^\s*$/d')"
-	local A=()
-	IFS=":" read -a A <<< "${LP}" || true
-	local FIRST="true"
-	for n in "${A[@]}" ; do
-		grep -q "^${n}$" <<< "${L}" || continue
-		[ -n "${n}" ] || continue
-		${FIRST} || echo -n "${SEP}"
-		echo -n "${n}"
-		L="$(grep -v "^${n}$" <<< "${L}")"
-		FIRST="false"
+	local __LP="${1}"
+	local __SEP="${2:-:}"
+	local __L="$(tr "${__SEP}" '\n' <<< "${__LP}" | sort -u | sed -e '/^\s*$/d')"
+	local __A=()
+	IFS=":" read -a __A <<< "${__LP}" || true
+	local __FIRST="true"
+	local __n=""
+	for __n in "${__A[@]}" ; do
+		grep -q "^${__n}$" <<< "${__L}" || continue
+		[ -n "${__n}" ] || continue
+		${__FIRST} || echo -n "${__SEP}"
+		echo -n "${__n}"
+		__L="$(grep -v "^${__n}$" <<< "${__L}")"
+		__FIRST="false"
 	done
 }
