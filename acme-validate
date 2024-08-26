@@ -1,13 +1,13 @@
 #!/bin/bash
 
 set -euo pipefail
-source /.functions
+. /.functions
 
 set_or_default SSL_DIR "/.ssl"
 
 require_exe openssl sha256sum
 
-say "👉 Validating the existing certificates and keys"
+doing "Validating the existing certificates and keys"
 is_dir "${SSL_DIR}"
 
 PWFILE="${SSL_DIR}/keystore.pass"

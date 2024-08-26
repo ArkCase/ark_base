@@ -2,7 +2,7 @@
 [ "$(id -u)" -eq 0 ] || exec sudo --non-interactive --preserve-env "PATH=${PATH}" "${0}" "${@}"
 
 set -euo pipefail
-source /.functions
+. /.functions
 
 # Just for safety's sake
 cd /
@@ -464,7 +464,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			--san "localhost"
 		)
 
-		[ -d "${SSL_DIR}" ] || mkdir -p "${SSL_DIR}" || fail "Failed to create the SSL certificate directory [${SSL_DIR}]"
+		require_dir_readwrite "${SSL_DIR}"
 
 		if [ -v ACME_KEYSTORE_PASSWORD_FILE ] ; then
 			[ -n "${ACME_KEYSTORE_PASSWORD_FILE}" ] || fail "The variable ACME_KEYSTORE_PASSWORD_FILE may not be empty"

@@ -100,7 +100,8 @@ quit()
 #
 define_base_vars()
 {
-	local __SCRIPT="$(readlink -f "${BASH_ARGV0:-${BASH_SOURCE:-${0}}}")"
+	local __SCRIPT="${1:-${BASH_ARGV0:-${BASH_SOURCE:-${0}}}}"
+	__SCRIPT="$(readlink -f "${__SCRIPT}")"
 	declare -gx __BASEDIR="$(dirname "${__SCRIPT}")"
 	declare -gx __SCRIPT="$(basename "${__SCRIPT}")"
 }
@@ -1064,4 +1065,80 @@ sanitize_pathspec()
 		__L="$(grep -v "^${__n}$" <<< "${__L}")"
 		__FIRST="false"
 	done
+}
+
+#
+# usage: read_setting SETTING_NAME [DEFAULT]
+#
+# Reads the value of a setting with the given name. If the
+# setting is an environment variable, its value will be returned.
+# Otherwise, if the variable SECRETS_DIR is set and points
+# to a directory which contains a regular file with the same
+# name as the setting, then its contents will be returned.
+#
+# Otherwise, the DEFAULT will be returned.
+#
+read_setting()
+{
+	local __SETTING="${1}"
+	local __DEFAULT="${2:-}"
+
+	local __RESULT="${__DEFAULT}"
+
+	if [ -v "${__SETTING}" ] ; then
+		# It's an envvar!! use it!
+		__RESULT="${!__SETTING}"
+	elif [ -v SECRETS_DIR ] ; then
+		if [ -d "${SECRETS_DIR}" ] ; then
+			# No envvar? What about a secret file?
+			local __FILE="${SECRETS_DIR}/${__SETTING}"
+			is_file_readable "${__FILE}" && __RESULT="$(<"${__FILE}")"
+		fi
+	fi
+
+	# Return the final value
+	echo -en "${__RESULT}"
+	return 0
+}
+
+#
+# usage: redirect_logs LOG_FILE
+#
+# Send a copy of STDOUT and STDERR to the given
+# file using tee and redirection
+#
+redirect_logs()
+{
+	local __LOG="${1}"
+	exec >> >(tee -a "${__LOG}")
+	exec 2>&1
+	say "Logs redirected to [${__LOG}]"
+}
+
+__ssl()
+{
+	local OP="${1}"
+	set_or_default SSL_DIR "/.ssl"
+	export SSL_DIR
+	"/usr/local/bin/acme-${OP}"
+}
+
+#
+# usage: init_ssl
+#
+# Initialize the SSL layer
+#
+init_ssl()
+{
+	__ssl init
+}
+
+#
+# usage: check_ssl
+#
+# Check the status of the SSL layer
+#
+check_ssl()
+{
+	__ssl validate
 }
