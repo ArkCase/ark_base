@@ -713,7 +713,9 @@ to_array()
 
 __var_set_tool()
 {
-	[ ${#} -ge 1 ] || return 1
+	[ ${#} -ge 2 ] || return 1
+	local __FUNC="${1}"
+	shift
 
 	local __VAR="${1}"
 
@@ -748,7 +750,7 @@ __var_set_tool()
 
 	# If we've been given a function to process the result
 	# before we return it, we use it
-	[ ${#} -ge 3 ] && __RESULT="$("${3}" "${__RESULT}")"
+	[ -n "${__FUNC}" ] && __RESULT="$("${__FUNC}" "${__RESULT}")"
 
 	# Declare it, keeping its export status!
 	declare -g${__X} ${__VAR}="${__RESULT}"
@@ -769,7 +771,7 @@ __var_set_tool()
 #
 set_or_default()
 {
-	__var_set_tool "${1}" "${2:-}"
+	__var_set_tool "" "${@}"
 }
 
 #
@@ -780,7 +782,7 @@ set_or_default()
 #
 set_as_boolean()
 {
-	__var_set_tool "${1}" "${2:-false}" to_boolean
+	__var_set_tool to_boolean "${@}"
 }
 
 #
