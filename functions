@@ -1274,7 +1274,7 @@ __poll_url()
 
 	local __START="$(date +%s)"
 	waiting "Starting the polling cycle for [${__URL}] (for up to ${__MAX_WAIT_STR})..."
-	local __NOW="${START}"
+	local __NOW="${__START}"
 	local __DURATION="0"
 	while true ; do
 		curl ${__INSECURE} -fsSL -m 5 "${__URL}" &>/dev/null && break
