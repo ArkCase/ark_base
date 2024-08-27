@@ -284,7 +284,7 @@ __require_dir()
 #
 require_dir()
 {
-	__require_dir is_dir "${@}"
+	__require_dir "" "${@}"
 }
 
 #
@@ -297,7 +297,7 @@ require_dir()
 #
 require_dir_readable()
 {
-	__require_dir is_dir_readable "${@}"
+	__require_dir readable "${@}"
 }
 
 #
@@ -310,7 +310,7 @@ require_dir_readable()
 #
 require_dir_writable()
 {
-	__require_dir is_dir_writable "${@}"
+	__require_dir writable "${@}"
 }
 
 #
@@ -323,7 +323,7 @@ require_dir_writable()
 #
 require_dir_readwrite()
 {
-	__require_dir is_dir_readwrite "${@}"
+	__require_dir readwrite "${@}"
 }
 
 #
