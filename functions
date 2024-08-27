@@ -271,7 +271,8 @@ __require_dir()
 {
 	local __FUNC="${1}"
 	local __DIR="${2}"
-	"${__FUNC}" "${__DIR}" || fail_dir "${__DIR}" "${?}"
+	[ -n "${__FUNC}" ] && __FUNC="_${__FUNC}"
+	"is_dir${__FUNC}" "${__DIR}" || fail_dir "${__DIR}" "${?}"
 }
 
 #
@@ -478,6 +479,78 @@ fail_file()
 
 	echo -e "${__MSG}"
 	exit ${EXIT_CODE:-1}
+}
+
+__require_file()
+{
+	local __FUNC="${1}"
+	local __FILE="${2}"
+	[ -n "${__FUNC}" ] && __FUNC="_${__FUNC}"
+	"is_file${__FUNC}" "${__FILE}" || fail_file "${__FILE}" "${?}"
+}
+
+#
+# usage: require_file FILE
+#
+# Check if the file exists, and exit
+# the script with a non-0 exit status and an
+# error message if it is not.
+#
+require_file()
+{
+	__require_file "" "${@}"
+}
+
+#
+# usage: require_file_readable FILE
+#
+# Check if the file exists and is
+# readable, and exit the script with a
+# non-0 exit status and an error message
+# if it is not.
+#
+require_file_readable()
+{
+	__require_file readable "${@}"
+}
+
+#
+# usage: require_file_writable FILE
+#
+# Check if the file exists and is
+# writable, and exit the script with a
+# non-0 exit status and an error message
+# if it is not.
+#
+require_file_writable()
+{
+	__require_file writable "${@}"
+}
+
+#
+# usage: require_file_readwrite FILE
+#
+# Check if the file exists and is
+# readable AND writable, and exit the
+# script with a non-0 exit status and
+# an error message if it is not.
+#
+require_file_readwrite()
+{
+	__require_file readwrite "${@}"
+}
+
+#
+# usage: require_file_executable FILE
+#
+# Check if the file exists and is
+# executable, and exit the
+# script with a non-0 exit status and
+# an error message if it is not.
+#
+require_file_executable()
+{
+	__require_file executable "${@}"
 }
 
 #
