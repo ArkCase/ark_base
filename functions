@@ -695,11 +695,14 @@ to_array()
 		local __V="${!__VAR}"
 		# Empty strings should convert to empty arrays
 		if [ -n "${__V}" ] ; then
+			# This will yield a non-empty array
 			readarray -t "${__VAR}" < <(to_list "${!__VAR}")
-			# Restore the export flag
 		else
+			# Make sure it's an empty array
+			unset "${__VAR}"
 			declare -ga "${__VAR}"
 		fi
+		# Restore the export flag
 		"${__EXPORT}" && declare -x "${__VAR}"
 	else
 		# Do the declaration
