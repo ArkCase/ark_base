@@ -679,7 +679,6 @@ csv_to_list()
 #
 to_array()
 {
-	# set -x
 	local __VAR="${1}"
 	local __EXPORT="false"
 	case "$(__get_var_flags "${__VAR}")" in
@@ -693,9 +692,14 @@ to_array()
 
 	if [ -v "${__VAR}" ] ; then
 		# Do the conversion
-		readarray -t "${__VAR}" < <(to_list "${!__VAR}")
-
-		# Restore the export flag
+		local __V="${!__VAR}"
+		# Empty strings should convert to empty arrays
+		if [ -n "${__V}" ] ; then
+			readarray -t "${__VAR}" < <(to_list "${!__VAR}")
+			# Restore the export flag
+		else
+			declare -ga "${__VAR}"
+		fi
 		"${__EXPORT}" && declare -x "${__VAR}"
 	else
 		# Do the declaration
