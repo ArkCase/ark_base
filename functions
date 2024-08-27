@@ -1149,7 +1149,9 @@ redirect_logs()
 __ssl()
 {
 	local OP="${1}"
+	local ENSURE="${2:-}"
 	set_or_default SSL_DIR "/.ssl"
+	as_boolean "${ENSURE}" && ensure_dir "${SSL_DIR}"
 	export SSL_DIR
 	"/usr/local/bin/acme-${OP}"
 }
@@ -1161,7 +1163,7 @@ __ssl()
 #
 init_ssl()
 {
-	__ssl init
+	__ssl init true
 }
 
 #
@@ -1171,7 +1173,7 @@ init_ssl()
 #
 check_ssl()
 {
-	__ssl validate
+	__ssl validate false
 }
 
 __poll_url()
