@@ -1049,6 +1049,7 @@ ini_get_value()
 urlencode()
 {
 	local __STR="${1}"
+	local __SLASH="${2:-true}"
 	local __LEN=${#__STR}
 
 	local __POS=0
@@ -1059,12 +1060,24 @@ urlencode()
 	for (( __POS=0 ; __POS < __LEN ; __POS++ )); do
 		__C="${__STR:${__POS}:1}"
 		case "${__C}" in
+			/ ) as_boolean "${__SLASH}" && __O="%2F" || __O="/" ;;
 			[-_.~a-zA-Z0-9] ) __O="${__C}" ;;
 			* ) printf -v __O '%%%02x' "'${__C}" ; __O="${__O^^}" ;;
 		esac
 		__RESULT+="${__O}"
 	done
 	echo -n "${__RESULT}"
+}
+
+#
+# usage: urlencode_path STRING
+#
+# Encode the given string using the URLEncode mechanism, with
+# one deviation: slashes (/) aren't encoded as %2F.
+#
+urlencode_path()
+{
+	urlencode "${1}" "false"
 }
 
 #
