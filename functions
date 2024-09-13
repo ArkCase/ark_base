@@ -944,7 +944,7 @@ is_valid_port()
 }
 
 #
-# usage: is_valid_ip IPADDRESS
+# usage: is_valid_ipv4 IPADDRESS
 #
 # Checks that the given IPADDRESS is a valid
 # IPv4 address (i.e. a 4-octet number).
