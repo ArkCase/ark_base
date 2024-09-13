@@ -861,6 +861,13 @@ secs_to_timestr()
 	local __NUM="(0|[1-9][0-9]*)"
 
 	[ -n "${__STR}" ] || return 1
+
+	# If it's already a timestring,
+	# then output it in lowercase
+	[[ "${__STR^^}" =~ ^(${__NUM}D)?(${__NUM}H)?(${__NUM}M)?(${__NUM}S)?$ ]] && \
+		echo -n "${__STR,,}" && return 0
+
+	# It's not a timestring, so parse it
 	[[ "${__STR}" =~ ^${__NUM}$ ]] || return 1
 
 	local __RET=""
@@ -895,6 +902,12 @@ timestr_to_secs()
 
 	# It could be a time string, so parse it out
 	[ -n "${__STR}" ] || return 1
+
+	# If it's already a number, then it's
+	# a seconds count so output it verbatim
+	[[ "${__STR}" =~ ^${__NUM}$ ]] && echo -n "${__STR}" && return 0
+
+	# It's not a seconds count, so parse it!
 	[[ "${__STR^^}" =~ ^(${__NUM}D)?(${__NUM}H)?(${__NUM}M)?(${__NUM}S)?$ ]] || return 1
 
 	local __PARTS=( "${BASH_REMATCH[@]:1}" )
