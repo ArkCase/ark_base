@@ -1,0 +1,29 @@
+#!/bin/bash
+
+set -euo pipefail
+. /.functions
+
+usage()
+{
+	echo -e "usage: ${BASH_ARGV0:-${BASH_SOURCE:-${0}}} command [args]"
+	exit 1
+}
+
+[ ${#} -ge 1 ] || usage
+
+set_or_default RUN_LOOP_WAIT "5s"
+RUN_LOOP_WAIT_SECS="$(timestr_to_secs "${RUN_LOOP_WAIT}")" || fail "The value [${RUN_LOOP_WAIT}] for RUN_LOOP_WAIT is neither a valid number of seconds, nor a valid time string (\${DAYS}d\${HOURS}h\${MINUTES}m\${SECONDS}s)"
+
+# Convert it back, just to make sure we have a timestring here
+RUN_LOOP_WAIT="$(secs_to_timestr "${RUN_LOOP_WAIT_SECS}")"
+
+eyes "The command will run in a loop with a ${RUN_LOOP_WAIT} wait between runs"
+ITERATION=0
+while true ; do
+	(( ++ITERATION ))
+	running "Iteration # ${ITERATION}: ${@@Q}"
+	"${@}" && ok "Exited with status code 0" || err "Exited with status code ${?}"
+	[ ${RUN_LOOP_WAIT_SECS} -gt 0 ] || continue
+	sleeping "Waiting ${RUN_LOOP_WAIT_SECS:-5} seconds before the next iteration"
+	sleep ${RUN_LOOP_WAIT_SECS}
+done
