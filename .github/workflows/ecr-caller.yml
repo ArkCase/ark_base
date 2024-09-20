@@ -8,7 +8,7 @@ on:
 
 jobs:
   call-workflow-in-ecr-template:
-    uses: arkcase/github-action-templates/.github/workflows/ecr-publish.yml@main
+    uses: arkcase/github-action-templates/.github/workflows/ecr-publish.yml@develop
     secrets:
       ECR_AWS_REGION: ${{ secrets.ECR_AWS_REGION }}
       ECR_AWS_ORG_ID: ${{ secrets.ECR_AWS_ORG_ID }}
