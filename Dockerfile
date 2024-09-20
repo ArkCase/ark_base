@@ -147,6 +147,13 @@ RUN groupadd --gid "${ACM_GID}" "${ACM_GROUP}"
 RUN yum -y install "${STEP_SRC}" && \
     yum -y clean all
 
+# Copy the STIG file so it can be consumed by the scanner
+RUN yum -y install scap-security-guide && \
+    cp -vf "/usr/share/xml/scap/ssg/content/ssg-rl8-ds.xml" "/ssg-ds.xml" && \
+    cp -vf "/usr/share/xml/scap/ssg/content/ssg-rl8-xccdf.xml" "/ssg-xccdf.xml" && \
+    yum -y remove scap-security-guide && \
+    yum -y clean all
+
 # Add the acme-init stuff (only accessible by ACM_GROUP)
 COPY --chown=root:${ACM_GROUP} acme-init acme-validate expand-urls /usr/local/bin/
 COPY --chown=root:root 00-acme-init /etc/sudoers.d
