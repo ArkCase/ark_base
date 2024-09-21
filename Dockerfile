@@ -99,7 +99,9 @@ RUN mkdir -p "${HOME}/.pki/nssdb" && \
     chown -R 1001:0 "${HOME}/.pki" && \
     yum -y update && \
     yum -y install --setopt=tsflags=nodocs \
+        authselect \
         bsdtar \
+        crypto-policies-scripts \
         findutils \
         gettext \
         glibc-langpack-en \
@@ -164,6 +166,11 @@ RUN chmod 0640 /etc/sudoers.d/00-acme-init && \
 # Add the common-use functions
 COPY --chown=root:root functions /.functions
 RUN chmod 0444 /.functions
+
+# STIG Remediations
+RUN authselect select minimal --force
+COPY --chown=root:root stig/ /usr/share/stig/
+RUN cd /usr/share/stig && ./run-all
 
 # Directory with the sources is set as the working directory so all STI scripts
 # can execute relative to this path.

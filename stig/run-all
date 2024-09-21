@@ -1,0 +1,45 @@
+#!/bin/bash
+SCRIPT="$(readlink -f "${BASH_ARGV0:-${BASH_SOURCE:-${0}}}")"
+BASEDIR="$(dirname "${SCRIPT}")"
+SCRIPT="$(basename "${SCRIPT}")"
+
+set -euo pipefail
+
+timestamp()
+{
+	date -Ins -u
+}
+
+say()
+{
+	echo -e "$(timestamp): ${@}"
+}
+
+run()
+{
+	say "🚀 Running: ${@}"
+	( exec "${@}" )
+	return ${?}
+}
+
+ok()
+{
+	say "✅ ${@}"
+}
+
+err()
+{
+	say "❌ ${@}"
+}
+
+fail()
+{
+	err "${@}"
+	exit 1
+}
+
+say "👀 Running the STIG remediation scripts"
+while read S ; do
+	run "${S}" && ok "Remediation successful!" || fail "Remediation failed"
+done < <(find "${BASEDIR}" -type f -name "*.sh" -executable | sort)
+ok "Remediations complete!"
