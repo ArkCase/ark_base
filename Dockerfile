@@ -99,6 +99,7 @@ RUN mkdir -p "${HOME}/.pki/nssdb" && \
     chown -R 1001:0 "${HOME}/.pki" && \
     yum -y update && \
     yum -y install --setopt=tsflags=nodocs \
+        authselect \
         bsdtar \
         crypto-policies-scripts \
         findutils \
@@ -167,6 +168,7 @@ COPY --chown=root:root functions /.functions
 RUN chmod 0444 /.functions
 
 # STIG Remediations
+RUN authselect select minimal --force
 COPY --chown=root:root stig/ /usr/share/stig/
 RUN cd /usr/share/stig && ./run-all
 
