@@ -3,7 +3,7 @@ set -euo pipefail
 
 cat <<-EOF
 STIG Remediation script for:
-       
+
 anssi           R36
 cis             4.5.3.3
 cis-csc         18
