@@ -35,7 +35,7 @@ ARG ACM_GROUP="acm"
 ARG GUCCI_VER="1.6.13"
 ARG GUCCI_SRC="https://github.com/noqcks/gucci/releases/download/v${GUCCI_VER}/gucci-v${GUCCI_VER}-linux-amd64"
 ARG STEP_VER="0.27.4"
-ARG STEP_SRC="https://dl.smallstep.com/gh-release/cli/gh-release-header/v${STEP_VER}/step-cli_${STEP_VER}_amd64.rpm"
+ARG STEP_SRC="https://dl.smallstep.com/gh-release/cli/gh-release-header/v${STEP_VER}/step-cli-${STEP_VER}-1.x86_64.rpm"
 
 # ARG BASE_REPO="registry.stage.redhat.io/ubi8/ubi"
 ARG BASE_REPO="docker.io/rockylinux"
