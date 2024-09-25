@@ -25,6 +25,7 @@
 # START: Base Image simliar to registry.access.redhat.com/ubi8/s2i-core:latest ############################
 ###########################################################################################################
 
+ARG PRIVATE_REGISTRY
 ARG VER="8"
 ARG ARCH="x86_64"
 ARG OS="linux"
@@ -32,14 +33,17 @@ ARG PKG="base"
 ARG PLATFORM="el8"
 ARG ACM_GID="10000"
 ARG ACM_GROUP="acm"
-ARG GUCCI_VER="1.6.13"
-ARG GUCCI_SRC="https://github.com/noqcks/gucci/releases/download/v${GUCCI_VER}/gucci-v${GUCCI_VER}-linux-amd64"
+ARG GUCCI_VER="1.6.13-arm"
+# ARG GUCCI_SRC="https://github.com/noqcks/gucci/releases/download/v${GUCCI_VER}/gucci-v${GUCCI_VER}-linux-amd64"
+ARG GUCCI_IMG="${PRIVATE_REGISTRY}/arkcase/gucci:${GUCCI_VER}"
 ARG STEP_VER="0.27.4"
 ARG STEP_SRC="https://dl.smallstep.com/gh-release/cli/gh-release-header/v${STEP_VER}/step-cli-${STEP_VER}-1.x86_64.rpm"
 
 # ARG BASE_REPO="registry.stage.redhat.io/ubi8/ubi"
 ARG BASE_REPO="docker.io/rockylinux"
 ARG BASE_IMG="${BASE_REPO}:${VER}"
+
+FROM "${GUCCI_IMG}" AS gucci
 
 FROM "${BASE_IMG}"
 
@@ -137,9 +141,8 @@ RUN rpm-file-permissions && \
 COPY --chown=root:root scripts/ /usr/local/bin
 RUN chmod a+rX /usr/local/bin/*
 
-RUN curl -kL --fail -o "/usr/local/bin/gucci" "${GUCCI_SRC}" && \
-    chown root:root "/usr/local/bin/gucci" && \
-    chmod u=rwx,go=rx "/usr/local/bin/gucci"
+COPY --chown=root:root --from=gucci /gucci /usr/local/bin
+RUN chmod u=rwx,go=rx "/usr/local/bin/gucci"
 
 ENV ACM_GROUP="${ACM_GROUP}"
 ENV ACM_GID="${ACM_GID}"
