@@ -942,6 +942,19 @@ is_valid_hostname()
 }
 
 #
+# usage: is_valid_hostname_part HOSTNAME_PART
+#
+# Check that the given hostname part is valid as per RFC-1123,
+# and return 0 if it is, or a non-0 status if it is not.
+#
+is_valid_hostname_part()
+{
+	local __PART="${1}"
+	[[ "${__PART,,}" =~ ^([a-z0-9][-a-z0-9]*)?[a-z0-9]$ ]] || return 1
+	return 0
+}
+
+#
 # usage: is_valid_port PORT
 #
 # Check that the given PORT is a number between
@@ -1350,4 +1363,63 @@ poll_url()
 poll_url_insecure()
 {
 	__poll_url true "${@}"
+}
+
+#
+# usage: auth_params USER:PASSWORD
+#
+# Generate a CURL authentication configuration that can
+# be used securely via --config
+#
+auth_params()
+{
+	local USER=""
+	local PASS=""
+
+	case ${#} in
+		0 )	;;
+		1 )	USER="${1}"
+			[[ "${USER}" =~ ^([^:]*)(:(.*))?$ ]] || true
+			USER="${BASH_REMATCH[1]}"
+			PASS="${BASH_REMATCH[3]}"
+			;;
+		* )	USER="${1}"
+			PASS="${2}"
+			;;
+	esac
+
+	cat <<-EOF
+	user "${USER}:${PASS}"
+	EOF
+}
+
+#
+# usage: execute_unless VAR_NAME COMMAND [ARGS ...]
+#
+# Execute the given command conditionally, in case the given variable has
+# a boolean-false value (or is not set).
+#
+execute_unless()
+{
+	[ ${#} -ge 2 ] || fail "execute_unless requires the name of the variable AND the command to execute"
+
+	local __VAR="${1}"
+	shift
+
+	[[ "${__VAR}" =~ ^[a-zA-Z0-9_]+$ ]] || fail "Invalid variable name [${__VAR}]"
+
+	#
+	# Show the command about to be executed
+	#
+	running "${@@Q}"
+	if as_boolean "${!__VAR}" ; then
+		warn "${__VAR} is set to true, Skipping the command execution"
+		return 0
+	fi
+
+	#
+	# Proceed with the execution
+	#
+	( exec "${@}" )
+	return ${?}
 }
