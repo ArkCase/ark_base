@@ -414,15 +414,15 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			if [ -n "${NAMESPACE}" ] ; then
 				if [ -n "${CLUSTER_DOMAIN}" ] ; then
 					[ -n "${FQSN}" ] || FQSN="${ACME_SERVICE_NAME}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
-					SAN+=(--san "${FQSN}")
+					SAN+=("${FQSN}")
 				fi
-				SAN+=(--san "${ACME_SERVICE_NAME}.${NAMESPACE}")
+				SAN+=("${ACME_SERVICE_NAME}.${NAMESPACE}")
 			fi
-			SAN+=(--san "${ACME_SERVICE_NAME}")
+			SAN+=("${ACME_SERVICE_NAME}")
 
 			SVC_VAR="${ACME_SERVICE_NAME^^}_SERVICE_HOST"
 			if [ -v "${SVC_VAR}" ] ; then
-				SVC_IP="$(validate_ip "${!SVC_VAR}")" && [ "${SVC_IP}" != "127.0.01" ] && SAN+=(--san "${SVC_IP}")
+				SVC_IP="$(validate_ip "${!SVC_VAR}")" && [ "${SVC_IP}" != "127.0.01" ] && SAN+=("${SVC_IP}")
 			fi
 		fi
 
@@ -431,38 +431,53 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 				if [ -n "${CLUSTER_DOMAIN}" ] ; then
 					[ -n "${FQSN}" ] || FQSN="${SERVICE}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
 					SAN+=(
-						--san "${POD}.${SERVICE}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
-						--san "${SERVICE}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
+						"${POD}.${SERVICE}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
+						"${SERVICE}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
 					)
 				fi
 				SAN+=(
-					--san "${POD}.${SERVICE}.${NAMESPACE}"
-					--san "${SERVICE}.${NAMESPACE}"
+					"${POD}.${SERVICE}.${NAMESPACE}"
+					"${SERVICE}.${NAMESPACE}"
 				)
 			fi
 			SAN+=(
-				--san "${POD}.${SERVICE}"
-				--san "${SERVICE}"
+				"${POD}.${SERVICE}"
+				"${SERVICE}"
 			)
 
 			SVC_VAR="${SERVICE^^}_SERVICE_HOST"
 			if [ -v "${SVC_VAR}" ] ; then
-				SVC_IP="$(validate_ip "${!SVC_VAR}")" && [ "${SVC_IP}" != "127.0.01" ] && SAN+=(--san "${SVC_IP}")
+				SVC_IP="$(validate_ip "${!SVC_VAR}")" && [ "${SVC_IP}" != "127.0.01" ] && SAN+=("${SVC_IP}")
 			fi
 		fi
 
 		if [ -v POD_IP ] ; then
-			POD_IP="$(validate_ip "${POD_IP}")" && [ "${POD_IP}" != "127.0.01" ] && SAN+=(--san "${POD_IP}")
+			POD_IP="$(validate_ip "${POD_IP}")" && [ "${POD_IP}" != "127.0.01" ] && SAN+=("${POD_IP}")
 		fi
 
 		# TODO: Use the ${SERVICE_NAME}_SERVICE_HOST as the service IP
 
 		# The least specific values
 		SAN+=(
-			--san "${POD}"
-			--san "localhost.localdomain"
-			--san "localhost"
+			"${POD}"
+			"localhost.localdomain"
+			"localhost"
 		)
+
+		# Add the extra SAN names, if provided. The list can be separated by spaces, commas, or colons
+		set_or_default EXTRA_SAN
+		if [ -n "${EXTRA_SAN}" ] ; then
+			# Turn the variable into an array, ignoring empty lines
+			readarray -t E_S < <(echo -n "${EXTRA_SAN}" | tr '[,:[:space:]]' '\n' | sed -e '/^\s*$/d')
+			[ -n "${E_S}" ]
+			for I in "${E_S[@]}" ; do
+				if is_valid_ipv4 "${I}" || is_valid_hostname "${I}" ; then
+					SAN+=("${I}")
+				else
+					warn "The value [${I}] from EXTRA_SAN is neither a valid IP nor a valid hostname, ignoring it"
+				fi
+			done
+		fi
 
 		ensure_dir "${SSL_DIR}"
 
@@ -486,10 +501,17 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			fi
 		fi
 
+		# Make sure our SAN list is unique, and
+		# sorted, and pre-pend the --san argument
+		SAN_ARG=()
+		while read S ; do
+			SAN_ARG+=(--san "${S}")
+		done < <(echo "${SAN[@]}" | tr '[:space:]' '\n' | sed -e '/^\s*$/d' | sort -u)
+
 		doing "Rendering a new certificate for this pod's use"
 		step ca certificate \
 			"${FQSN:-${FQDN}}" "${SSL_DIR}/cert.pem" "${SSL_DIR}/cert.key" \
-			"${SAN[@]}" \
+			"${SAN_ARG[@]}" \
 			-f \
 			--size 4096 \
 			--kty RSA \
