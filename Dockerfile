@@ -128,6 +128,9 @@ RUN mkdir -p "${HOME}/.pki/nssdb" && \
     yum -y clean all --enablerepo='*' && \
     update-alternatives --set python /usr/bin/python3
 
+# Enable FIPS
+RUN fips-mode-setup --enable
+
 # Copy extra files to the image.
 COPY ./core/root/ /
 
