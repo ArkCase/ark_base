@@ -530,14 +530,6 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 
 		SECURE_FILES+=("${SSL_DIR}/cert.key")
 
-		doing "Creating an RSA encrypted version of the key..."
-		openssl rsa -aes256 \
-			-in "${SSL_DIR}/cert.key" \
-			-out "${SSL_DIR}/cert.key.rsa" \
-			-passout env:STOREPASS \
-			&& say "\t✅ RSA Encrypted key ready!" \
-			|| warn "Failed to create the RSA Encrypted certificate key"
-
 		doing "Creating a AES (PKCS8) encrypted version of the key..."
 		openssl pkcs8 -topk8 \
 			-in "${SSL_DIR}/cert.key" \
@@ -546,6 +538,16 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			-passout env:STOREPASS \
 			&& say "\t✅ AES-256 (PKCS8) Encrypted key ready!" \
 			|| warn "Failed to create the AES-256 (PKCS8) Encrypted certificate key"
+
+		if ! is_fips_enabled ; then
+			doing "Creating an RSA encrypted version of the key..."
+			openssl rsa -aes256 \
+				-in "${SSL_DIR}/cert.key" \
+				-out "${SSL_DIR}/cert.key.rsa" \
+				-passout env:STOREPASS \
+				&& say "\t✅ RSA Encrypted key ready!" \
+				|| warn "Failed to create the RSA Encrypted certificate key"
+		fi
 
 		doing "Copying the root and intermediate CAs into the target directory..."
 		cp -f "${ACME_ROOT_CA_ANCHOR}" "${SSL_DIR}/ca-root.pem"
