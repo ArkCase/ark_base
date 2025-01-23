@@ -1,0 +1,19 @@
+#!/bin/bash
+
+set -euo pipefail
+. /.functions
+
+set_or_default FLAG_FILE "/proc/sys/crypto/fips_enabled"
+
+export FLAG_FILE
+
+RC=0
+fips_enabled || RC=${?}
+
+case ${RC} in
+	0 ) ok "FIPS is enabled!" ; exit 0 ;;
+	2 ) fail "FIPS is not enabled: [${FLAG_FILE}] is not readable or does not exist" ;;
+	3 ) fail "FIPS is not enabled: failed to read the contents of [${FLAG_FILE}]" ;;
+	4 ) fail "FIPS is not enabled: the contents of [${FLAG_FILE}] did not match the expected contents" ;;
+	* ) fail "FIPS is not enabled" ;;
+esac
