@@ -176,7 +176,7 @@ COPY --chown=root:root stig/ /usr/share/stig/
 RUN cd /usr/share/stig && ./run-all
 
 # Enable FIPS
-RUN fips-mode-setup --enable
+# RUN fips-mode-setup --enable
 
 # Directory with the sources is set as the working directory so all STI scripts
 # can execute relative to this path.
