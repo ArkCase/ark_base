@@ -618,7 +618,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 		# Finally, if other keystore types are required, use them
 		for STORETYPE in jks jceks ; do
 			is_supported "${STORETYPE^^}" || continue
-			doing "Creating a ${STORETYPE^^} Java Keystore with the new certificate & key..." 
+			doing "Creating a ${STORETYPE^^} Java Keystore with the new certificate & key..."
 			STOREFILE="${SSL_DIR}/keystore.${STORETYPE}"
 			rm -f "${STOREFILE}" &>/dev/null || true
 
