@@ -177,8 +177,10 @@ set_or_default ACME_WAIT "false"
 set_or_default ACME_WAIT_MARKER "${SSL_DIR}/.acme-ready"
 set_or_default ACME_WAIT_TIMEOUT "$(timestr_to_secs 20m)"
 
-set_or_default PKCS12_KEY_PBE "AES-256-CBC"
-set_or_default PKCS12_CERT_PBE "${PKCS12_KEY_PBE}"
+DEFAULT_ENC_ALG="AES-256-CBC"
+set_or_default PKCS8_KEY_ALGO "${DEFAULT_ENC_ALG}"
+set_or_default PKCS12_KEY_PBE "${DEFAULT_ENC_ALG}"
+set_or_default PKCS12_CERT_PBE "${DEFAULT_ENC_ALG}"
 
 set_or_default SSL_EXTRA_SAN
 set_as_boolean SSL_EXTRA_SAN_STRICT
@@ -490,14 +492,14 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 
 		SECURE_FILES+=("${SSL_DIR}/cert.key")
 
-		doing "Creating a AES (PKCS8) encrypted version of the key..."
+		doing "Creating a PKCS8 encrypted version of the key (${PKCS8_KEY_ALGO})..."
 		openssl pkcs8 -topk8 \
 			-in "${SSL_DIR}/cert.key" \
 			-out "${SSL_DIR}/cert.key.aes" \
-			-v2 aes-256-cbc \
+			-v2 "${PKCS8_KEY_ALGO}" \
 			-passout env:STOREPASS \
-			&& say "\t✅ AES-256 (PKCS8) Encrypted key ready!" \
-			|| warn "Failed to create the AES-256 (PKCS8) Encrypted certificate key"
+			&& say "\t✅ PKCS8 Encrypted key ready!" \
+			|| warn "Failed to create the PKCS8 Encrypted certificate key"
 
 		if ! fips_enabled ; then
 			doing "Creating an RSA encrypted version of the key..."
@@ -537,7 +539,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 
 	# Find the Java keytool, if it's installed
 	if ! "${ACME_WAIT}" ; then
-		doing "Rendering a PKCS12 Keystore with the new certificate & key..."
+		doing "Rendering a PKCS12 Keystore with the new certificate & key (key-pbe=${PKCS12_KEY_PBE}, cert-pbe=${PKCS12_CERT_PBE})..."
 
 		# First, create the base keystore including all trusted certs
 		PKCS12="${SSL_DIR}/keystore.pkcs12"
