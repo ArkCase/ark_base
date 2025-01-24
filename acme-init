@@ -577,6 +577,13 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 
 	# Find the Java keytool, if it's installed
 	if type -P keytool &>/dev/null && ! "${ACME_WAIT}" ; then
+
+		#
+		# We unfortunately have to disable FIPS for Java ... long story
+		#
+		set_or_default JAVA_TOOL_OPTIONS
+		fips_enabled && export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS} -Dcom.redhat.fips=false"
+
 		doing "Rendering a PKCS12 Keystore with the new certificate & key..."
 
 		# First, create the base keystore
