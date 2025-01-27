@@ -1,0 +1,18 @@
+#!/bin/bash
+set -euo pipefail
+. /.functions
+
+# Enable debugging ...
+set_as_boolean DEBUG
+${DEBUG} && set -x
+
+set_or_default CURL_ENCRYPTION_KEY
+if [ -n "${CURL_ENCRYPTION_KEY}" ] ; then
+	# Decrypt the value
+	exec openssl aes-256-cbc \
+		-a -A -salt -iter 5 -d \
+		-kfile <(echo -n "${CURL_ENCRYPTION_KEY}") 2>/dev/null
+else
+	# Don't decrypt anything ...
+	exec cat
+fi
