@@ -204,6 +204,8 @@ set_or_default KT_PROVIDER
 set_or_default KT_PROVIDER_ARGS
 set_or_default KT_PROVIDER_PATH
 
+KEYSTORE_GENERATED="false"
+
 # Find the Java keytool, if it's installed
 KEYTOOL="false"
 type -P keytool &>/dev/null && KEYTOOL="true"
@@ -588,6 +590,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			"${PKCS12_FLAGS[@]}" \
 			-passout env:STOREPASS
 		say "\t✅ Ready!"
+		KEYSTORE_GENERATED="true"
 	fi
 
 	doing "Setting tight permissions for the generated data..."
@@ -623,7 +626,7 @@ say "\t✅ CA trusts updated system-wide!"
 
 # Add the global trusts (from ${CACERTS}) into the keystore
 
-if as_boolean "${KEYTOOL}" ; then
+if as_boolean "${KEYSTORE_GENERATED}" ; then
 	doing "Adding the global trusts to the ${KEYSTORE_TYPE} keystore!"
 	add_global_trusts "${KEYSTORE_TYPE}" "${KEYSTORE}" "${STOREPASS}" || fail "Failed to add the global trusts to the keystore!"
 	say "\t✅ Global trusts added!"
