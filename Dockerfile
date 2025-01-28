@@ -117,11 +117,13 @@ LABEL VERSION="${VER}"
 ENV \
     STI_SCRIPTS_URL="image:///usr/libexec/s2i" \
     STI_SCRIPTS_PATH="/usr/libexec/s2i" \
-    BASE_DIR="/app" \
     APP_ROOT="/opt/app-root" \
     HOME="/opt/app-root/src" \
     PATH="/opt/app-root/src/bin:/opt/app-root/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
     PLATFORM="${PLATFORM}"
+
+ARG BASE_DIR="/app"
+ENV BASE_DIR="${BASE_DIR}"
 
 # This is the list of basic dependencies that all language container image can
 # consume.
