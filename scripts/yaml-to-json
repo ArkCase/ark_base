@@ -1,0 +1,8 @@
+#!/usr/bin/python3
+
+import yaml
+import json
+import sys
+
+yaml_object = yaml.safe_load(sys.stdin)
+json.dump(yaml_object, sys.stdout)
