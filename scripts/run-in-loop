@@ -3,6 +3,12 @@
 set -euo pipefail
 . /.functions
 
+handle_term()
+{
+	err "Process Terminated"
+	exit 1
+}
+
 usage()
 {
 	echo -e "usage: ${BASH_ARGV0:-${BASH_SOURCE:-${0}}} command [args]"
@@ -17,6 +23,8 @@ RUN_LOOP_WAIT_SECS="$(timestr_to_secs "${RUN_LOOP_WAIT}")" || fail "The value [$
 # Convert it back, just to make sure we have a timestring here
 RUN_LOOP_WAIT="$(secs_to_timestr "${RUN_LOOP_WAIT_SECS}")"
 
+trap handle_term TERM
+
 eyes "The command will run in an endless loop with a ${RUN_LOOP_WAIT} wait between iterations"
 ITERATION=0
 while true ; do
@@ -25,5 +33,5 @@ while true ; do
 	"${@}" && ok "Exited with status code 0" || err "Exited with status code ${?}"
 	[ ${RUN_LOOP_WAIT_SECS} -gt 0 ] || continue
 	sleeping "Waiting ${RUN_LOOP_WAIT} before the next iteration"
-	sleep ${RUN_LOOP_WAIT_SECS}
+	sleep ${RUN_LOOP_WAIT_SECS} || fail "Sleep interrupted"
 done
