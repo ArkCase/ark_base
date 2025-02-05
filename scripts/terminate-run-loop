@@ -4,16 +4,20 @@ set -euo pipefail
 . /.functions
 
 # First off, set the termination flag
-set_or_default LOOP_TERMINATION_FILE "/.terminate"
+set_or_default LOOP_TERMINATION_FILE "/tmp/.terminate"
 
-RC=0
-touch "${LOOP_TERMINATION_FILE}" || RC=${?}
+if ! touch "${LOOP_TERMINATION_FILE}" ; then
+	CMD="warn"
+	[ ${#} -gt 0 ] && CMD="fail"
 
-# If the command is set to "fail", then execution will stop there and
-# the final "execute" invocation will not be reached
-CMD="warn"
-[ ${#} -gt 0 ] && CMD="fail"
-"${CMD}" "Unable to set the termination marker at [${LOOP_TERMINATION_FILE}]"
+	# If the command is set to "fail", then execution will stop there and
+	# the final "execute" invocation will not be reached. Otherwise, we'll
+	# just issue a warning and continue
+	"${CMD}" "Unable to set the termination marker at [${LOOP_TERMINATION_FILE}]"
+fi
+
+# If there's no command to be run, we end here
+[ ${#} -gt 0 ] || quit "Termination marker set at [${LOOP_TERMINATION_FILE}]"
 
 # Now, run whatever termination command was requested
 execute "${@}"
