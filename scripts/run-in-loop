@@ -14,6 +14,7 @@ terminate_if_requested()
 	local FILE="${1}"
 	local ITERATION="${2}"
 	is_file "${FILE}" && quit "The termination flag [${FILE}] was detected, stopping after iteration # ${ITERATION}"
+	return 0
 }
 
 usage()
