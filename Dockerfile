@@ -187,7 +187,6 @@ RUN yum -y install "${STEP_SRC}" && \
 # Copy the STIG file so it can be consumed by the scanner
 RUN yum -y install scap-security-guide && \
     cp -vf "/usr/share/xml/scap/ssg/content/ssg-rl8-ds.xml" "/ssg-ds.xml" && \
-    cp -vf "/usr/share/xml/scap/ssg/content/ssg-rl8-xccdf.xml" "/ssg-xccdf.xml" && \
     yum -y remove scap-security-guide && \
     yum -y clean all
 
