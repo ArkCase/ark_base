@@ -7,6 +7,45 @@ set -euo pipefail
 # Just for safety's sake
 cd /
 
+split_hostnames()
+{
+	if [ ${#} -gt 0 ] ; then
+		echo -n "${@}" | split_hostnames
+	else
+		tr -c '[a-zA-Z0-9-]' '\n' | sed -e '/^\s*$/d'
+	fi
+	return 0
+}
+
+list_hostname_variations()
+{
+	local VARIATION="${1}"
+	shift
+
+	echo "${VARIATION}"
+	get_service_ip "${VARIATION}"
+
+	for n in "${@}" ; do
+		# We stop as soon as we find an empty element
+		[ -n "${n}" ] || break
+
+		VARIATION+=".${n}"
+		echo "${VARIATION}"
+	done
+}
+
+get_service_ip()
+{
+	# Sanitize the name - convert all invalid chars to "_"
+	local SERVICE_NAME="$(echo -n "${1^^}" | tr -c '[A-Z0-9]' '_')"
+	local SVC_VAR="${SERVICE_NAME^^}_SERVICE_HOST"
+	[ -v "${SVC_VAR}" ] || return 0
+	local SVC_IP=""
+	SVC_IP="$(validate_ip "${!SVC_VAR}")" || return 0
+	[ "${SVC_IP}" != "127.0.0.1" ] && echo "${SVC_IP}"
+	return 0
+}
+
 marker_exists()
 {
 	local MARKER="${1}"
@@ -195,6 +234,7 @@ set_or_default ACME_WAIT_TIMEOUT "$(timestr_to_secs 20m)"
 
 set_or_default SSL_EXTRA_SAN
 set_as_boolean SSL_EXTRA_SAN_STRICT
+set_or_default ACME_SERVICE_EXTRA_NAMES
 
 set_or_default DEFAULT_PBE "AES-256-CBC"
 set_or_default PKCS12_KEY_PBE "${DEFAULT_PBE}"
@@ -403,12 +443,16 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 
 	if as_boolean "${GENERATE_NEW_CERTIFICATES}" && ! as_boolean "${ACME_WAIT}" ; then
 		FQDN="$(hostname -f)"
-		IFS="." read POD SERVICE NAMESPACE SVC CLUSTER_DOMAIN <<< "${FQDN}"
+		IFS="." read POD SERVICE NAMESPACE CLUSTER_DOMAIN <<< "${FQDN}"
 
 		# Fully-Qualified Service Name
 		FQSN=""
+		[ -n "${NAMESPACE}" ] && [ -n "${CLUSTER_DOMAIN}" ] && FQSN="${SERVICE}.${NAMESPACE}.${CLUSTER_DOMAIN}"
 
-		SAN=()
+		SAN=( ${FQDN} $(list_hostname_variations "${POD}" "${SERVICE}" "${NAMESPACE}" "${CLUSTER_DOMAIN}") )
+
+		[ -n "${SERVICE}" ] && \
+			SAN+=( $(list_hostname_variations "${SERVICE}" "${NAMESPACE}" "${CLUSTER_DOMAIN}") )
 
 		# ACME_SERVICE_NAME is the "consumable" service, while
 		# SERVICE is the (possibly headless) default service
@@ -416,52 +460,21 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 		# aren't required to be. Thus, we check to see if they're
 		# the same, to avoid adding duplicate values
 		set_or_default ACME_SERVICE_NAME "${SERVICE}"
-		if [ "${ACME_SERVICE_NAME}" != "${SERVICE}" ] ; then
-			if [ -n "${NAMESPACE}" ] ; then
-				if [ -n "${CLUSTER_DOMAIN}" ] ; then
-					[ -n "${FQSN}" ] || FQSN="${ACME_SERVICE_NAME}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
-					SAN+=("${FQSN}")
-				fi
-				SAN+=("${ACME_SERVICE_NAME}.${NAMESPACE}")
-			fi
-			SAN+=("${ACME_SERVICE_NAME}")
+		[ "${ACME_SERVICE_NAME}" != "${SERVICE}" ] && \
+			SAN+=( $(list_hostname_variations "${ACME_SERVICE_NAME}" "${NAMESPACE}" "${CLUSTER_DOMAIN}") )
 
-			SVC_VAR="${ACME_SERVICE_NAME^^}_SERVICE_HOST"
-			if [ -v "${SVC_VAR}" ] ; then
-				SVC_IP="$(validate_ip "${!SVC_VAR}")" && [ "${SVC_IP}" != "127.0.01" ] && SAN+=("${SVC_IP}")
-			fi
-		fi
+		# These are extra service names through which this
+		# same pod may be reached
+		#
+		# The string may have multiple basenames (no dots!),
+		# and be separated by commas, spaces, or colons
+		while read EXTRA_NAME ; do
+			is_valid_hostname_part "${EXTRA_NAME}" || continue
+			SAN+=( $(list_hostname_variations "${EXTRA_NAME}" "${NAMESPACE}" "${CLUSTER_DOMAIN}") )
+		done < <(split_hostnames "${ACME_SERVICE_EXTRA_NAMES}")
 
-		if [ -n "${SERVICE}" ] ; then
-			if [ -n "${NAMESPACE}" ] ; then
-				if [ -n "${CLUSTER_DOMAIN}" ] ; then
-					[ -n "${FQSN}" ] || FQSN="${SERVICE}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
-					SAN+=(
-						"${POD}.${SERVICE}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
-						"${SERVICE}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
-					)
-				fi
-				SAN+=(
-					"${POD}.${SERVICE}.${NAMESPACE}"
-					"${SERVICE}.${NAMESPACE}"
-				)
-			fi
-			SAN+=(
-				"${POD}.${SERVICE}"
-				"${SERVICE}"
-			)
-
-			SVC_VAR="${SERVICE^^}_SERVICE_HOST"
-			if [ -v "${SVC_VAR}" ] ; then
-				SVC_IP="$(validate_ip "${!SVC_VAR}")" && [ "${SVC_IP}" != "127.0.01" ] && SAN+=("${SVC_IP}")
-			fi
-		fi
-
-		if [ -v POD_IP ] ; then
+		[ -v POD_IP ] && \
 			POD_IP="$(validate_ip "${POD_IP}")" && [ "${POD_IP}" != "127.0.01" ] && SAN+=("${POD_IP}")
-		fi
-
-		# TODO: Use the ${SERVICE_NAME}_SERVICE_HOST as the service IP
 
 		# The least specific values
 		SAN+=(
@@ -471,19 +484,15 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 		)
 
 		# Add the extra SAN names, if provided. The list can be separated by spaces, commas, or colons
-		if [ -n "${SSL_EXTRA_SAN}" ] ; then
-			# Turn the variable into an array, ignoring empty lines
-			readarray -t EXTRA_SAN < <(echo -n "${SSL_EXTRA_SAN}" | tr '[,:[:space:]]' '\n' | sed -e '/^\s*$/d')
-			for S in "${EXTRA_SAN[@]}" ; do
-				if is_valid_ipv4 "${S}" || is_valid_hostname "${S}" ; then
-					SAN+=("${S}")
-				else
-					# If we're strict, we explode ... we don't warn
-					as_boolean "${SSL_EXTRA_SAN_STRICT}" && CMD="fail" || CMD="warn"
-					"${CMD}" "The value [${S}] from SSL_EXTRA_SAN is neither a valid IP nor a valid hostname, ignoring it"
-				fi
-			done
-		fi
+		while read S ; do
+			if is_valid_ipv4 "${S}" || is_valid_hostname "${S}" ; then
+				SAN+=("${S}")
+			else
+				# If we're strict, we explode ... we don't warn
+				as_boolean "${SSL_EXTRA_SAN_STRICT}" && CMD="fail" || CMD="warn"
+				"${CMD}" "The value [${S}] from SSL_EXTRA_SAN is neither a valid IP nor a valid hostname"
+			fi
+		done < <(split_hostnames "${SSL_EXTRA_SAN}")
 
 		ensure_dir "${SSL_DIR}"
 
