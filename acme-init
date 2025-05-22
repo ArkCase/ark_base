@@ -10,7 +10,7 @@ cd /
 split_hostnames()
 {
 	if [ ${#} -gt 0 ] ; then
-		echo -n "${@}" | split_hostnames
+		echo "${@}" | split_hostnames
 	else
 		tr -c '[a-zA-Z0-9-]' '\n' | sed -e '/^\s*$/d'
 	fi
@@ -234,7 +234,7 @@ set_or_default ACME_WAIT_TIMEOUT "$(timestr_to_secs 20m)"
 
 set_or_default SSL_EXTRA_SAN
 set_as_boolean SSL_EXTRA_SAN_STRICT
-set_or_default ACME_SERVICE_EXTRA_NAMES
+set_or_default SSL_SERVICE_EXTRA_NAMES
 
 set_or_default DEFAULT_PBE "AES-256-CBC"
 set_or_default PKCS12_KEY_PBE "${DEFAULT_PBE}"
@@ -443,16 +443,14 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 
 	if as_boolean "${GENERATE_NEW_CERTIFICATES}" && ! as_boolean "${ACME_WAIT}" ; then
 		FQDN="$(hostname -f)"
-		IFS="." read POD SERVICE NAMESPACE CLUSTER_DOMAIN <<< "${FQDN}"
+		IFS="." read POD SERVICE NAMESPACE SVC CLUSTER_DOMAIN <<< "${FQDN}"
 
-		# Fully-Qualified Service Name
-		FQSN=""
-		[ -n "${NAMESPACE}" ] && [ -n "${CLUSTER_DOMAIN}" ] && FQSN="${SERVICE}.${NAMESPACE}.${CLUSTER_DOMAIN}"
+		VARIATIONS=( "${NAMESPACE}" "${SVC}" "${CLUSTER_DOMAIN}" )
 
-		SAN=( ${FQDN} $(list_hostname_variations "${POD}" "${SERVICE}" "${NAMESPACE}" "${CLUSTER_DOMAIN}") )
+		SAN=( ${FQDN} $(list_hostname_variations "${POD}" "${SERVICE}" "${VARIATIONS[@]}") )
 
 		[ -n "${SERVICE}" ] && \
-			SAN+=( $(list_hostname_variations "${SERVICE}" "${NAMESPACE}" "${CLUSTER_DOMAIN}") )
+			SAN+=( $(list_hostname_variations "${SERVICE}" "${VARIATIONS[@]}") )
 
 		# ACME_SERVICE_NAME is the "consumable" service, while
 		# SERVICE is the (possibly headless) default service
@@ -461,7 +459,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 		# the same, to avoid adding duplicate values
 		set_or_default ACME_SERVICE_NAME "${SERVICE}"
 		[ "${ACME_SERVICE_NAME}" != "${SERVICE}" ] && \
-			SAN+=( $(list_hostname_variations "${ACME_SERVICE_NAME}" "${NAMESPACE}" "${CLUSTER_DOMAIN}") )
+			SAN+=( $(list_hostname_variations "${ACME_SERVICE_NAME}" "${VARIATIONS[@]}") )
 
 		# These are extra service names through which this
 		# same pod may be reached
@@ -470,8 +468,8 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 		# and be separated by commas, spaces, or colons
 		while read EXTRA_NAME ; do
 			is_valid_hostname_part "${EXTRA_NAME}" || continue
-			SAN+=( $(list_hostname_variations "${EXTRA_NAME}" "${NAMESPACE}" "${CLUSTER_DOMAIN}") )
-		done < <(split_hostnames "${ACME_SERVICE_EXTRA_NAMES}")
+			SAN+=( $(list_hostname_variations "${EXTRA_NAME}" "${VARIATIONS[@]}") )
+		done < <(split_hostnames "${SSL_SERVICE_EXTRA_NAMES}")
 
 		[ -v POD_IP ] && \
 			POD_IP="$(validate_ip "${POD_IP}")" && [ "${POD_IP}" != "127.0.01" ] && SAN+=("${POD_IP}")
@@ -529,7 +527,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 
 		doing "Rendering a new certificate for this pod's use"
 		step ca certificate \
-			"${FQSN:-${FQDN}}" "${SSL_DIR}/cert.pem" "${SSL_DIR}/cert.key" \
+			"${FQDN}" "${SSL_DIR}/cert.pem" "${SSL_DIR}/cert.key" \
 			"${SAN_ARG[@]}" \
 			-f \
 			--size 4096 \
