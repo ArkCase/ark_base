@@ -1455,3 +1455,39 @@ fips_enabled()
 	# The flag file is there and contains a non-0 number
 	return 0
 }
+
+#
+# usage: get_namespace
+#
+# Get the current Kubernetes namespace
+#
+get_namespace()
+{
+	# If we don't know our namespace, we figure it out
+	for NS in KUBERNETES POD ; do
+		V="${NS}_NAMESPACE"
+		[ -v "${V}" ] || continue
+		[ -n "${!V}" ] && echo "${!V}" && return 0
+	done
+	return 0
+}
+
+#
+# usage: get_cluster_domain
+#
+# Compute the cluster domain for the current pod, if possible
+#
+get_cluster_domain()
+{
+	if [ -v CLUSTER_DOMAIN ] && [ -n "${CLUSTER_DOMAIN}" ] ; then
+		echo -n "${CLUSTER_DOMAIN}"
+		return 0
+	fi
+
+	# If we don't know our namespace, we figure it out
+	local NAMESPACE="$(get_namespace)"
+	[ -n "${NAMESPACE}" ] || return 0
+
+	# Let's see what we can do
+	hostname -f | sed -e "s;^.*\.${NAMESPACE}\.svc\.;;g"
+}
