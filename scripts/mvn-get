@@ -4,6 +4,9 @@ set -euo pipefail
 
 DEFAULT_MVN_CENTRAL_REPO="https://repo1.maven.org/maven2"
 
+set_or_default DOWNLOAD_RETRY 3
+set_or_default DOWNLOAD_RETRY_SEC 5
+
 download()
 {
 	local URL="${1}"
@@ -11,7 +14,16 @@ download()
 	local DEST="${3:-""}"
 	[ -n "${AUTH}" ] && AUTH="--user ${AUTH}"
 	[ -n "${DEST}" ] && DEST=(--output "${DEST}")
-	curl --location --fail --disallow-username-in-url --config <(echo -n "${AUTH}") "${DEST[@]}" "${URL}"
+	curl \
+		--location \
+		--fail \
+		--disallow-username-in-url \
+		--retry-connrefused \
+		--retry-delay ${DOWNLOAD_RETRY} \
+		--retry ${DOWNLOAD_RETRY_SEC} \
+		--config <(echo -n "${AUTH}") \
+		"${DEST[@]}" \
+		"${URL}"
 }
 
 decrypt()
