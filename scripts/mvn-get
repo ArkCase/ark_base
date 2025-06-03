@@ -14,16 +14,34 @@ download()
 	local DEST="${3:-""}"
 	[ -n "${AUTH}" ] && AUTH="--user ${AUTH}"
 	[ -n "${DEST}" ] && DEST=(--output "${DEST}")
-	curl \
-		--location \
-		--fail \
-		--disallow-username-in-url \
-		--retry-connrefused \
-		--retry-delay ${DOWNLOAD_RETRY} \
-		--retry ${DOWNLOAD_RETRY_SEC} \
-		--config <(echo -n "${AUTH}") \
-		"${DEST[@]}" \
-		"${URL}"
+	local ATTEMPT=1
+	while [ ${ATTEMPT} -lt ${DOWNLOAD_RETRY} ] ; do
+		if [ ${ATTEMPT} -gt 1 ] ; then
+			sleep ${DOWNLOAD_RETRY_SEC} || return ${?}
+		fi
+
+		local RC=0
+		curl \
+			--location \
+			--fail \
+			--disallow-username-in-url \
+			--retry-connrefused \
+			--retry-delay ${DOWNLOAD_RETRY} \
+			--retry ${DOWNLOAD_RETRY_SEC} \
+			--config <(echo -n "${AUTH}") \
+			"${DEST[@]}" \
+			"${URL}" || RC=${?}
+
+		# If there were no errors, return immediately
+		[ ${RC} -eq ] && return 0
+
+		# If there's a retryable error, then do so
+		case ${RC} in
+			16 | 18 | 36 | 55 | 56 |  92 | 95 | 96 ) (( ATTEMPT++ )) ; continue ;;
+		esac
+
+		return ${RC}
+	done
 }
 
 decrypt()
