@@ -1,5 +1,5 @@
 #!/bin/bash
-[ "$(id -u)" -eq 0 ] || exec sudo --non-interactive --preserve-env "PATH=${PATH}" "${0}" "${@}"
+[ $(id -u) -eq 0 ] || exec sudo --non-interactive --preserve-env "PATH=${PATH}" "${0}" "${@}"
 
 set -euo pipefail
 . /.functions
