@@ -33,7 +33,7 @@ download()
 			"${URL}" || RC=${?}
 
 		# If there were no errors, return immediately
-		[ ${RC} -eq ] && return 0
+		[ ${RC} -eq 0 ] && return 0
 
 		# If there's a retryable error, then do so
 		case ${RC} in
