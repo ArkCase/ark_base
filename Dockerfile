@@ -218,6 +218,10 @@ RUN mkdir -p "${CRYPTO_DIR}" \
     && mvn-get "${BC_TLS_SRC}" "${BC_TLS_JAR}" \
     && mvn-get "${BC_UTIL_SRC}" "${BC_UTIL_JAR}"
 
+ENV CURL_HOME="/etc/curl"
+COPY --chown=root:root curlrc "${CURL_HOME}/.curlrc"
+RUN chmod a=r "${CURL_HOME}/.curlrc"
+
 # Directory with the sources is set as the working directory so all STI scripts
 # can execute relative to this path.
 WORKDIR "${HOME}"
