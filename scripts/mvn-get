@@ -180,12 +180,18 @@ fi
 BASE="${BASE}/${ARTIFACT_ID}-${FINAL_VERSION}"
 TAB=""
 if [ -z "${EXTENSION}" ] ; then
-	say "⚠️ Packaging (type) not provided, must identify it from the POM"
-	POM="$(download "${BASE}.pom" "${AUTH}" 2>/dev/null)" || fail "Failed to download the artifact POM for ${GROUP_ID}:${ARTIFACT_ID}:${VERSION} from [${BASE}.pom]"
-	xmllint - <<< "${POM}" &>/dev/null || fail "The artifact POM for ${GROUP_ID}:${ARTIFACT_ID}:${VERSION} downloaded from [${BASE}.pom] is not valid XML"
-	EXTENSION="$(xmlstarlet sel -N "p=http://maven.apache.org/POM/4.0.0" -t -v '/p:project/p:packaging' <<< "${POM}")" || true
+	say "⚠️ Packaging (type) not provided, will attempt to identify it from the POM"
+	if POM="$(download "${BASE}.pom" "${AUTH}" 2>/dev/null)" ; then
+		if xmllint - <<< "${POM}" &>/dev/null ; then
+			EXTENSION="$(xmlstarlet sel -N "p=http://maven.apache.org/POM/4.0.0" -t -v '/p:project/p:packaging' <<< "${POM}")" || true
+			TAB="\t"
+		else
+			err "The artifact POM for ${GROUP_ID}:${ARTIFACT_ID}:${VERSION} downloaded from [${BASE}.pom] is not valid XML"
+		fi
+	else
+		err "Failed to download the artifact POM for ${GROUP_ID}:${ARTIFACT_ID}:${VERSION} from [${BASE}.pom]"
+	fi
 	[ -z "${EXTENSION}" ] && EXTENSION="jar"
-	TAB="\t"
 fi
 say "${TAB}✅ Will download the ${EXTENSION} artifact"
 
