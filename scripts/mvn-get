@@ -197,8 +197,8 @@ say "${TAB}✅ Will download the ${EXTENSION} artifact"
 
 # Must be given explicitly ...
 if [ -n "${CLASSIFIER}" ] ; then
-	CLASSIFIER="-${CLASSIFIER}"
 	say "✅ The classifier is ${CLASSIFIER}"
+	CLASSIFIER="-${CLASSIFIER}"
 fi
 
 URL="${BASE}${CLASSIFIER}.${EXTENSION}"
