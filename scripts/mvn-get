@@ -69,6 +69,11 @@ decrypt()
 	return 0
 }
 
+cleanup()
+{
+	[ -v WORKDIR ] && is_dir "${WORKDIR}" && rm -rf "${WORKDIR}" &>/dev/null
+}
+
 usage()
 {
 	{
@@ -151,6 +156,9 @@ say "\tArtifact:    [${ARTIFACT}]"
 say "\tRepository:  [${REPO_URL}]"
 say "\tDestination: [${DEST}]"
 
+export WORKDIR="$(mktemp -d)"
+trap cleanup EXIT
+
 FINAL_VERSION="${VERSION}"
 SUPPORT_SNAPSHOT="true"
 if [ "${VERSION}" == "LATEST" ] || [ "${VERSION}" == "RELEASE" ] ; then
@@ -158,9 +166,14 @@ if [ "${VERSION}" == "LATEST" ] || [ "${VERSION}" == "RELEASE" ] ; then
 	# in the <release> element, but we take precautions nonetheless
 	[ "${VERSION}" == "RELEASE" ] && SUPPORT_SNAPSHOT="false"
 	say "⚠️ Identifying the ${VERSION} artifact version to download..."
-	XML="$(download "${BASE}/maven-metadata.xml" "${AUTH}" 2>/dev/null)" || fail "Failed to download the artifact metadata for ${GROUP_ID}:${ARTIFACT_ID} from [${BASE}/maven-metadata.xml]"
-	xmllint - <<< "${XML}" &>/dev/null || fail "The artifact metadata for ${GROUP_ID}:${ARTIFACT_ID} downloaded from [${BASE}/maven-metadata.xml] is not valid XML"
-	FINAL_VERSION="$(xmlstarlet sel -t -v "/metadata/versioning/${VERSION,,}" <<< "${XML}")" || fail "Failed to identify the ${VERSION} version for ${GROUP_ID}:${ARTIFACT_ID} from the XML at [${BASE}/maven-metadata.xml]"
+
+	RC=0
+	XML="${WORKDIR}/maven-metadata.xml"
+	OUT="$(download "${BASE}/maven-metadata.xml" "${AUTH}" "${XML}" 2>&1)" || RC=${?}
+	[ ${RC} -eq 0 ] || fail "Failed to download the artifact metadata for ${GROUP_ID}:${ARTIFACT_ID} from [${BASE}/maven-metadata.xml] (rc=${RC}):\n${OUT}"
+	xmllint "${XML}" &>/dev/null || fail "The artifact metadata for ${GROUP_ID}:${ARTIFACT_ID} downloaded from [${BASE}/maven-metadata.xml] is not valid XML"
+
+	FINAL_VERSION="$(xmlstarlet sel -t -v "/metadata/versioning/${VERSION,,}" < "${XML}")" || fail "Failed to identify the ${VERSION} version for ${GROUP_ID}:${ARTIFACT_ID} from the XML at [${BASE}/maven-metadata.xml]"
 	say "\t✅ The ${VERSION} version is ${FINAL_VERSION}"
 	VERSION="${FINAL_VERSION}"
 fi
@@ -169,10 +182,15 @@ fi
 BASE+="/${VERSION}"
 if "${SUPPORT_SNAPSHOT}" && [[ "${VERSION^^}" =~ (^|[^a-zA-Z0-9])SNAPSHOT$ ]] ; then
 	say "⚠️ This version is a SNAPSHOT - identifying the final artifact to download"
-	XML="$(download "${BASE}/maven-metadata.xml" "${AUTH}" 2>/dev/null)" || fail "Failed to download the artifact metadata for ${GROUP_ID}:${ARTIFACT_ID}:${VERSION} from [${BASE}/maven-metadata.xml]"
-	xmllint - <<< "${XML}" &>/dev/null || fail "The artifact metadata for ${GROUP_ID}:${ARTIFACT_ID}:${VERSION} downloaded from [${BASE}/maven-metadata.xml] is not valid XML"
-	TIMESTAMP="$(xmlstarlet sel -t -v '/metadata/versioning/snapshot/timestamp' <<< "${XML}")" || fail "No timestamp data is present for the required snapshot version, cannot continue"
-	BUILD_NUMBER="$(xmlstarlet sel -t -v '/metadata/versioning/snapshot/buildNumber' <<< "${XML}")" || fail "No build number data is present for the required snapshot version, cannot continue"
+
+	RC=0
+	XML="${WORKDIR}/maven-metadata.xml"
+	OUT="$(download "${BASE}/maven-metadata.xml" "${AUTH}" "${XML}" 2>&1)" || RC=${?}
+	[ ${RC} -eq 0 ] || fail "Failed to download the artifact metadata for ${GROUP_ID}:${ARTIFACT_ID}:${VERSION} from [${BASE}/maven-metadata.xml] (rc=${RC}):\n${OUT}"
+	xmllint "${XML}" &>/dev/null || fail "The artifact metadata for ${GROUP_ID}:${ARTIFACT_ID} downloaded from [${BASE}/maven-metadata.xml] is not valid XML"
+
+	TIMESTAMP="$(xmlstarlet sel -t -v '/metadata/versioning/snapshot/timestamp' < "${XML}")" || fail "No timestamp data is present for the required snapshot version, cannot continue"
+	BUILD_NUMBER="$(xmlstarlet sel -t -v '/metadata/versioning/snapshot/buildNumber' < "${XML}")" || fail "No build number data is present for the required snapshot version, cannot continue"
 	FINAL_VERSION="$(echo -n "${VERSION}" | /usr/bin/sed -e "s/\(\b\)SNAPSHOT\(\b\)/\1${TIMESTAMP}-${BUILD_NUMBER}\2/gi")"
 	say "\t✅ The latest SNAPSHOT version is ${FINAL_VERSION}"
 fi
@@ -181,16 +199,15 @@ BASE="${BASE}/${ARTIFACT_ID}-${FINAL_VERSION}"
 TAB=""
 if [ -z "${EXTENSION}" ] ; then
 	say "⚠️ Packaging (type) not provided, will attempt to identify it from the POM"
-	if POM="$(download "${BASE}.pom" "${AUTH}" 2>/dev/null)" ; then
-		if xmllint - <<< "${POM}" &>/dev/null ; then
-			EXTENSION="$(xmlstarlet sel -N "p=http://maven.apache.org/POM/4.0.0" -t -v '/p:project/p:packaging' <<< "${POM}")" || true
-			TAB="\t"
-		else
-			err "The artifact POM for ${GROUP_ID}:${ARTIFACT_ID}:${VERSION} downloaded from [${BASE}.pom] is not valid XML"
-		fi
-	else
-		err "Failed to download the artifact POM for ${GROUP_ID}:${ARTIFACT_ID}:${VERSION} from [${BASE}.pom]"
-	fi
+
+	RC=0
+	POM="${WORKDIR}/file.pom"
+	OUT="$(download "${BASE}.pom" "${AUTH}" "${POM}" 2>&1)" || RC=${?}
+	[ ${RC} -eq 0 ] || fail "Failed to download the artifact POM for ${GROUP_ID}:${ARTIFACT_ID}:${VERSION} from [${BASE}.pom] (rc=${?}):\n${OUT}"
+	xmllint "${POM}" &>/dev/null || fail "The artifact POM for ${GROUP_ID}:${ARTIFACT_ID}:${VERSION} downloaded from [${BASE}.pom] is not valid XML"
+
+	TAB="\t"
+	EXTENSION="$(xmlstarlet sel -N "p=http://maven.apache.org/POM/4.0.0" -t -v '/p:project/p:packaging' < "${POM}")" || true
 	[ -z "${EXTENSION}" ] && EXTENSION="jar"
 fi
 say "${TAB}✅ Will download the ${EXTENSION} artifact"
@@ -228,7 +245,8 @@ fi
 doing "Final Version: [${FINAL_VERSION}]"
 doing "Final File:    [${DEST}]"
 doing "Final URL:     [${URL}]"
-download "${URL}" "${AUTH}" "${DEST}" || fail "Failed to complete the download"
+download "${URL}" "${AUTH}" "${DEST}" || fail "Failed to complete the download (rc=${?})"
 ok "Download successful!"
 type -P render-helpers &>/dev/null || exit 0
+cleanup || true
 execute render-helpers "${DEST}" "${FINAL_VERSION}"
