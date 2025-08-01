@@ -529,8 +529,9 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 		step ca certificate \
 			"${FQDN}" "${SSL_DIR}/cert.pem" "${SSL_DIR}/cert.key" \
 			"${SAN_ARG[@]}" \
-			-f \
-			--size 4096 \
+			--force \
+			--not-before="-1h30m" \
+			--size 2048 \
 			--kty RSA \
 			--provisioner-password-file "${ACME_PASSWORD_FILE}" \
 			--password-file="${ACME_KEYSTORE_PASSWORD_FILE}"
