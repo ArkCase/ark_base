@@ -35,8 +35,8 @@ ARG ACM_GID="10000"
 ARG ACM_GROUP="acm"
 ARG GUCCI_VER="1.9.0"
 ARG GUCCI_SRC="https://github.com/noqcks/gucci/releases/download/v${GUCCI_VER}/gucci-v${GUCCI_VER}-linux-amd64"
-ARG STEP_VER="0.28.6"
-ARG STEP_SRC="https://dl.smallstep.com/gh-release/cli/gh-release-header/v${STEP_VER}/step-cli-${STEP_VER}-1.x86_64.rpm"
+ARG STEP_VER="0.28.7"
+ARG STEP_SRC="https://github.com/smallstep/cli/releases/download/v${STEP_VER}/step-cli_amd64.rpm"
 
 ARG BC_GROUP="org.bouncycastle"
 
