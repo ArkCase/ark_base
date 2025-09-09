@@ -23,7 +23,9 @@ timestamp()
 #
 say()
 {
-	echo -e "$(timestamp): ${@}"
+	local SUFFIX=""
+	[ -v PARALLEL_ID ] && SUFFIX="|${!PARALLEL_ID}"
+	echo -e "$(timestamp) [${$}${SUFFIX}]: ${@}"
 }
 
 #
