@@ -1308,7 +1308,7 @@ __poll_url()
 	local __INSECURE="${1}"
 	shift
 
-	as_boolean "${__INSECURE}" && __INSECURE="-k"
+	as_boolean "${__INSECURE}" && __INSECURE="-k" || __INSECURE=""
 
 	local __URL="${1}"
 
