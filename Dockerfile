@@ -33,8 +33,6 @@ ARG PKG="base"
 ARG PLATFORM="el8"
 ARG ACM_GID="10000"
 ARG ACM_GROUP="acm"
-ARG GUCCI_VER="1.9.0"
-ARG GUCCI_SRC="https://github.com/noqcks/gucci/releases/download/v${GUCCI_VER}/gucci-v${GUCCI_VER}-linux-amd64"
 ARG STEP_VER="0.28.7"
 ARG STEP_SRC="https://github.com/smallstep/cli/releases/download/v${STEP_VER}/step-cli_amd64.rpm"
 
@@ -64,6 +62,12 @@ ARG BC_UTIL_SRC="${BC_UTIL_GROUP}:${BC_UTIL}:${BC_UTIL_VER}:jar"
 ARG BASE_REPO="docker.io/rockylinux"
 ARG BASE_IMG="${BASE_REPO}:${VER}"
 
+ARG GUCCI_REPO="arkcase/gucci"
+ARG GUCCI_TAG="latest"
+ARG GUCCI_IMG="${PRIVATE_REGISTRY}/${GUCCI_REPO}:${GUCCI_TAG}"
+
+FROM "${GUCCI_IMG}" AS gucci
+
 FROM "${BASE_IMG}"
 
 ARG OS_VERSION
@@ -74,7 +78,6 @@ ARG PKG
 ARG PLATFORM
 ARG ACM_GROUP
 ARG ACM_GID
-ARG GUCCI_SRC
 ARG STEP_SRC
 ARG BC_PKIX
 ARG BC_PKIX_SRC
@@ -170,9 +173,7 @@ RUN rpm-file-permissions && \
 COPY --chown=root:root scripts/ /usr/local/bin
 RUN chmod a+rX /usr/local/bin/*
 
-RUN export GUCCI="/usr/local/bin/gucci" && \
-    wget -c "${GUCCI_SRC}" -O "${GUCCI}" && \
-    chmod u=rwx,go=rx "${GUCCI}"
+COPY --chown=root:root --chmod=0755 --from=gucci /gucci /usr/local/bin/gucci
 
 ENV ACM_GROUP="${ACM_GROUP}"
 ENV ACM_GID="${ACM_GID}"
