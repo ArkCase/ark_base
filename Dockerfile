@@ -63,6 +63,13 @@ ARG STEP_SRC
 # ( Click Cancel whe it prompts you to login )
 #
 
+ENV STI_SCRIPTS_PATH="/usr/libexec/s2i"
+ENV STI_SCRIPTS_URL="image://${STI_SCRIPTS_PATH}"
+ENV APP_ROOT="/opt/app"
+ENV HOME="${APP_ROOT}/src" \
+    PATH="${APP_ROOT}/src/bin:${APP_ROOT}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+    PLATFORM="${PLATFORM}"
+
 ENV SUMMARY="Base image which allows using of source-to-image." \
     DESCRIPTION="The s2i-core image provides any images layered on top of it \
 with all the tools needed to use source-to-image functionality while keeping \
@@ -72,8 +79,8 @@ LABEL summary="${SUMMARY}" \
       description="${DESCRIPTION}" \
       io.k8s.description="${DESCRIPTION}" \
       io.k8s.display-name="s2i core" \
-      io.openshift.s2i.scripts-url=image:///usr/libexec/s2i \
-      io.s2i.scripts-url=image:///usr/libexec/s2i \
+      io.openshift.s2i.scripts-url="image://${STI_SCRIPTS_PATH}" \
+      io.s2i.scripts-url="image://${STI_SCRIPTS_PATH}" \
       com.redhat.component="s2i-core-container" \
       name="ubi8/s2i-core" \
       version="1" \
@@ -84,16 +91,13 @@ LABEL MAINTAINER="ArkCase Support <support@arkcase.com>"
 LABEL APP="Base"
 LABEL VERSION="${VER}"
 
-ENV \
-    STI_SCRIPTS_URL="image:///usr/libexec/s2i" \
-    STI_SCRIPTS_PATH="/usr/libexec/s2i" \
-    APP_ROOT="/opt/app-root" \
-    HOME="/opt/app-root/src" \
-    PATH="/opt/app-root/src/bin:/opt/app-root/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
-    PLATFORM="${PLATFORM}"
-
 ARG BASE_DIR="/app"
 ENV BASE_DIR="${BASE_DIR}"
+
+ENV DEF_USER="default"
+ENV DEF_UID="1001"
+ENV DEF_GROUP="${DEF_USER}"
+ENV DEF_GID="${DEF_UID}"
 
 # This is the list of basic dependencies that all language container image can
 # consume.
@@ -102,7 +106,7 @@ ENV BASE_DIR="${BASE_DIR}"
 # TODO: Use better UID and GID values
 
 RUN mkdir -p "${HOME}/.pki/nssdb" && \
-    chown -R 1001:0 "${HOME}/.pki" && \
+    chown -R "${DEF_UID}:${DEF_GID}" "${HOME}/.pki" && \
     yum -y update && \
     yum -y install --setopt=tsflags=nodocs \
         authselect \
@@ -135,9 +139,10 @@ COPY ./core/root/ /
 
 # Reset permissions of modified directories and add default user
 RUN rpm-file-permissions && \
-    useradd -u 1001 -r -g 0 -d "${HOME}" -s /sbin/nologin \
-        -c "Default Application User" default && \
-    chown -R 1001:0 ${APP_ROOT} && \
+    groupadd --system --gid "${DEF_GID}" "${DEF_GROUP}" && \
+    useradd --system --uid "${DEF_UID}" --gid "${DEF_GID}" --home-dir "${HOME}" --shell /sbin/nologin \
+        --comment "Default Application User" "${DEF_USER}" && \
+    chown -R "${DEF_USER}:${DEF_GROUP}" ${APP_ROOT} && \
     mkdir -p "${BASE_DIR}"
 
 COPY --chown=root:root scripts/ /usr/local/bin
