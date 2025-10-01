@@ -42,9 +42,10 @@ ARG GUCCI_REPO="arkcase/gucci"
 ARG GUCCI_TAG="latest"
 ARG GUCCI_IMG="${PRIVATE_REGISTRY}/${GUCCI_REPO}:${GUCCI_TAG}"
 
+ARG STEP_REBUILD_REGISTRY="${PRIVATE_REGISTRY}"
 ARG STEP_REBUILD_REPO="arkcase/step-rebuild"
 ARG STEP_REBUILD_TAG="latest"
-ARG STEP_REBUILD_IMG="${PRIVATE_REGISTRY}/${STEP_REBUILD_REPO}:${STEP_REBUILD_TAG}"
+ARG STEP_REBUILD_IMG="${STEP_REBUILD_REGISTRY}/${STEP_REBUILD_REPO}:${STEP_REBUILD_TAG}"
 
 FROM "${GUCCI_IMG}" AS gucci
 
@@ -158,7 +159,7 @@ ENV ACM_GID="${ACM_GID}"
 RUN groupadd --gid "${ACM_GID}" "${ACM_GROUP}"
 
 # Install STEP
-COPY --chown=root:root --chmod=0755 --from=step /step /usr/local/bin/step
+COPY --chown=root:root --chmod=0755 --from=step /step /usr/local/bin/
 
 # Copy the STIG file so it can be consumed by the scanner
 RUN yum -y install scap-security-guide && \
