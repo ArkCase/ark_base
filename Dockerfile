@@ -33,8 +33,6 @@ ARG PKG="base"
 ARG PLATFORM="el8"
 ARG ACM_GID="10000"
 ARG ACM_GROUP="acm"
-ARG STEP_VER="0.28.7"
-ARG STEP_SRC="https://github.com/smallstep/cli/releases/download/v${STEP_VER}/step-cli_amd64.rpm"
 
 # ARG BASE_REPO="registry.stage.redhat.io/ubi8/ubi"
 ARG BASE_REPO="docker.io/rockylinux"
@@ -44,7 +42,13 @@ ARG GUCCI_REPO="arkcase/gucci"
 ARG GUCCI_TAG="latest"
 ARG GUCCI_IMG="${PRIVATE_REGISTRY}/${GUCCI_REPO}:${GUCCI_TAG}"
 
+ARG STEP_REBUILD_REPO="arkcase/step-rebuild"
+ARG STEP_REBUILD_TAG="latest"
+ARG STEP_REBUILD_IMG="${PRIVATE_REGISTRY}/${STEP_REBUILD_REPO}:${STEP_REBUILD_TAG}"
+
 FROM "${GUCCI_IMG}" AS gucci
+
+FROM "${STEP_REBUILD_IMG}" AS step
 
 FROM "${BASE_IMG}"
 
@@ -56,7 +60,6 @@ ARG PKG
 ARG PLATFORM
 ARG ACM_GROUP
 ARG ACM_GID
-ARG STEP_SRC
 
 #
 # Based on https://catalog.redhat.com/software/containers/ubi8/s2i-core/5c83967add19c77a15918c27?container-tabs=dockerfile
@@ -155,8 +158,7 @@ ENV ACM_GID="${ACM_GID}"
 RUN groupadd --gid "${ACM_GID}" "${ACM_GROUP}"
 
 # Install STEP
-RUN yum -y install "${STEP_SRC}" && \
-    yum -y clean all
+COPY --chown=root:root --chmod=0755 --from=step /step /usr/local/bin/step
 
 # Copy the STIG file so it can be consumed by the scanner
 RUN yum -y install scap-security-guide && \
