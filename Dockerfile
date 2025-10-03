@@ -191,7 +191,7 @@ ENV CURL_HOME="/etc/curl"
 COPY --chown=root:root curlrc "${CURL_HOME}/.curlrc"
 RUN chmod a=r "${CURL_HOME}/.curlrc"
 
-COPY --chown=root:root --chmod=0755 apply-fixes /usr/local/bin/
+COPY --chown=root:root --chmod=0755 apply-fixes fix-jars /usr/local/bin/
 
 # Directory with the sources is set as the working directory so all STI scripts
 # can execute relative to this path.

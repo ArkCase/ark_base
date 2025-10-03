@@ -1,0 +1,92 @@
+#!/bin/bash
+
+set -euo pipefail
+. /.functions
+define_base_vars
+
+get_executable()
+{
+	[ ${#} -gt 0 ] || return 0
+
+	local __EXE="${1}"
+	[[ "${__EXE}" =~ / ]] && is_file_executable "${__EXE}" && echo "${__EXE}" && return 0
+	type -P "${__EXE}" &>/dev/null && echo "${__EXE}" && return 0
+	declare -f "${__EXE}" &>/dev/null && echo "${__EXE}" && return 0
+	echo "There is no post-processing command or function named [${__EXE}] that can be called"
+	return 1
+}
+
+usage()
+{
+	echo -e "usage: ${BASH_ARGV0:-${BASH_SOURCE:-${0}}} CVE-name-or-label [old-version:]new-version artifact1 [ artifact2 artifact3 ... artifactN ]"
+}
+
+[ ${#} -ge 3 ] || usage
+
+CVE_LABEL="${1}"
+[ -n "${CVE_LABEL}" ] || fail "You must provide a CVE label or description"
+
+NEW_VERSION="${2}"
+[ -n "${NEW_VERSION}" ] || fail "The version number may not be empty"
+
+shift 2
+
+OLD_VERSION=""
+OLD_VERSION_MAJOR=""
+if [[ "${NEW_VERSION}" =~ ^([^:]+):([^:]+)$ ]] ; then
+	OLD_VERSION="${BASH_REMATCH[1]}"
+	NEW_VERSION="${BASH_REMATCH[2]}"
+
+	[[ "${OLD_VERSION}" =~ ^(0|[1-9][0-9]*)([.](.+))?$ ]] || fail "The old version number must at least have numeric major component"
+	OLD_VERSION_MAJOR="${BASH_REMATCH[1]}"
+fi
+
+[[ "${NEW_VERSION}" =~ ^(0|[1-9][0-9]*)([.]([0-9]+))([.](.+))?$ ]] || fail "The new version number must at least have numeric major and minor components"
+
+NEW_VERSION_MAJOR="${BASH_REMATCH[1]}"
+NEW_VERSION_MINOR="${BASH_REMATCH[3]}"
+NEW_VERSION_REST="${BASH_REMATCH[5]}"
+
+[ -n "${OLD_VERSION_MAJOR}" ] || OLD_VERSION_MAJOR="${NEW_VERSION_MAJOR}"
+
+set_or_default POST_CALL
+if [ -n "${POST_CALL}" ] ; then
+	POST_CALL="$(get_executable "${POST_CALL}")" || fail "${POST_CALL}"
+fi
+
+eyes "Fixing JARs for ${CVE_LABEL}"
+
+for ARTIFACT_ID in "${@}" ; do
+
+	[[ "${ARTIFACT_ID}" =~ ^([^@]+)@([a-zA-Z0-9_,]+)$ ]] || continue
+
+	ARTIFACT_ID="${BASH_REMATCH[1]}"
+
+	TGT_LIST="${BASH_REMATCH[2]}"
+	TGT_LIST=( ${TGT_LIST//,/ } )
+
+	FILENAME="${ARTIFACT_ID##*:}"
+	JAR_NAME="${FILENAME}-${NEW_VERSION}.jar"
+
+	FIRST=""
+	for TGT in "${TGT_LIST[@]}" ; do
+		[ -v "${TGT}" ] || fail "The variable [${TGT}] is not declared"
+		TGT="${!TGT}"
+
+		find "${TGT}" -type f -name "${FILENAME}-${OLD_VERSION_MAJOR}.*" -delete -print
+
+		if [ -z "${FIRST}" ] ; then
+			# We do it like this b/c we only want to download ONCE
+			mvn-get "${ARTIFACT_ID}:${NEW_VERSION}:jar" "${TGT}"
+			FIRST="${TGT}/${JAR_NAME}"
+		else
+			# Re-use the downloaded copy to all these other places
+			ln -vf "${FIRST}" "${TGT}" || cp -vc "${FIRST}" "${TGT}" || fail "Failed to copy or link [${FIRST}] to [${TGT}]"
+		fi
+
+		[ -n "${POST_CALL}" ] || continue
+		"${POST_CALL}" "${ARTIFACT_ID}" "${OLD_VERSION_MAJOR}" "${NEW_VERSION}" "${TGT}/${JAR_NAME}" || fail "Post-processing call failed for [${ARTIFACT_ID}:${NEW_VERSION}] on [${TGT}]"
+	done
+done
+
+ok "Remediation complete"
