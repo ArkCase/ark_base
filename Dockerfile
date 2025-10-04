@@ -176,8 +176,7 @@ RUN chmod 0640 /etc/sudoers.d/00-acme-init && \
     sed -i -e "s;\${ACM_GROUP};${ACM_GROUP};g" /etc/sudoers.d/00-acme-init
 
 # Add the common-use functions
-COPY --chown=root:root functions /.functions
-RUN chmod 0444 /.functions
+COPY --chown=root:root --chmod=0444 functions /.functions
 
 # STIG Remediations
 RUN authselect select minimal --force
@@ -188,8 +187,7 @@ RUN cd /usr/share/stig && ./run-all
 RUN fips-mode-setup --enable
 
 ENV CURL_HOME="/etc/curl"
-COPY --chown=root:root curlrc "${CURL_HOME}/.curlrc"
-RUN chmod a=r "${CURL_HOME}/.curlrc"
+COPY --chown=root:root --chmod=0644 curlrc "${CURL_HOME}/.curlrc"
 
 COPY --chown=root:root --chmod=0755 apply-fixes fix-jars /usr/local/bin/
 
