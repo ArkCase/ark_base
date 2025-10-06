@@ -160,7 +160,7 @@ COPY --chown=root:root --chmod=0644 curlrc "${CURL_HOME}/.curlrc"
 COPY --chown=root:root --chmod=0755 apply-fixes /usr/local/bin/
 
 # FINAL STEP: ensure all sensitive directories are duly protected
-RUN find /usr /lib -type d | sort -u | xargs -L 100 -P 10 chmod go-w
+RUN secure-permissions
 
 # Directory with the sources is set as the working directory so all STI scripts
 # can execute relative to this path.

@@ -1,0 +1,6 @@
+#!/bin/bash
+#
+# Remove group and other write permissions from sensitive locations
+#
+find /usr /lib -type d | \
+	xargs -L 100 -P 10 chmod --changes go-w
