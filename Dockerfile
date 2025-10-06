@@ -32,7 +32,7 @@ ARG ACM_GROUP="acm"
 # once we get Ubuntu Pro into the mix
 # ARG BASE_REGISTRY="docker.io"
 ARG BASE_REPO="docker.io/library/ubuntu"
-ARG BASE_IMG="${BASE_REGISTRY}/${BASE_REPO}:${VER}"
+ARG BASE_IMG="${BASE_REPO}:${VER}"
 
 ARG GUCCI_REGISTRY="${PRIVATE_REGISTRY}"
 ARG GUCCI_REPO="arkcase/rebuild-gucci"
