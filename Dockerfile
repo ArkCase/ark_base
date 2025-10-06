@@ -24,14 +24,14 @@ ARG VER="22.04"
 ARG ARCH="x86_64"
 ARG OS="linux"
 ARG PKG="base"
-ARG PLATFORM="22.04"
+ARG PLATFORM="ubuntu:${VER}"
 ARG ACM_GID="10000"
 ARG ACM_GROUP="acm"
 
 # TODO: Swap the BASE_REGISTRY and BASE_REPO to the secure UBI
 # once we get Ubuntu Pro into the mix
-ARG BASE_REGISTRY="docker.io"
-ARG BASE_REPO="library/ubuntu"
+# ARG BASE_REGISTRY="docker.io"
+ARG BASE_REPO="docker.io/library/ubuntu"
 ARG BASE_IMG="${BASE_REGISTRY}/${BASE_REPO}:${VER}"
 
 ARG GUCCI_REGISTRY="${PRIVATE_REGISTRY}"
