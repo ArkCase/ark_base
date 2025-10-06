@@ -1,8 +1,6 @@
 # arkcase/base
 Base Image for ArkCase Docker Images
 
-When we are ready to switch to RHEL, this image will be replaced with registry.access.redhat.com/ubi8/s2i-core:latest
-
 ## How to build:
 
 docker build -t public.ecr.aws/arkcase/base:latest .
