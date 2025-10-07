@@ -98,6 +98,7 @@ RUN mkdir -p "${HOME}/.pki/nssdb" && \
         curl \
         dnsutils \
         findutils \
+        gettext-base \
         jq \
         libpam-pwquality \
         libxml2-utils \
@@ -105,6 +106,7 @@ RUN mkdir -p "${HOME}/.pki/nssdb" && \
         python-is-python3 \
         python3 \
         python3-pip \
+        python3-yaml \
         sudo \
         tar \
         unzip \
