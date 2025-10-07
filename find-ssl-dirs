@@ -1,0 +1,67 @@
+#!/bin/bash
+
+set -euo pipefail
+. /.functions
+
+print_for_id()
+{
+	local ID="${1}"
+	local VERSION="${2:-}"
+
+	local OS_SSL_CACERTS=""
+	local OS_SSL_ANCHORS=""
+	local OS_SSL_UPDATE_CMD=()
+	case "${ID,,}" in
+
+		ubuntu | debian )
+			OS_SSL_ANCHORS="/usr/local/share/ca-certificates"
+			OS_SSL_CACERTS="/etc/ssl/certs/java/cacerts"
+			OS_SSL_UPDATE_CMD=( /usr/sbin/update-ca-certificates --verbose --fresh )
+			;;
+
+		rocky | centos | rhel | fedora )
+			local TRUSTS_HOME="/etc/pki/ca-trust"
+			OS_SSL_ANCHORS="${TRUSTS_HOME}/source/anchors"
+			OS_SSL_CACERTS="${TRUSTS_HOME}/extracted/java/cacerts"
+			OS_SSL_UPDATE_CMD=( /usr/bin/update-ca-trust extract )
+			;;
+
+		* ) return 1 ;;
+	esac
+
+	for VAR in OS_SSL_CACERTS OS_SSL_ANCHORS OS_SSL_UPDATE_CMD ; do
+		declare -p "${VAR}"
+	done
+	return 0
+}
+
+(
+	set -euo pipefail
+	SOURCED="false"
+	for DIR in /etc /usr/lib ; do
+		OS_RELEASE="${DIR}/os-release"
+		[ -f "${OS_RELEASE}" ] || continue
+		. "${OS_RELEASE}" || fail "Failed to source the file ${OS_RELEASE}"
+		SOURCED="true"
+	done
+	as_boolean "${SOURCED}" || fail "Failed to find the os-release files ... can't continue!"
+
+	[ -n "${NAME:-}" ] || NAME="Linux"
+	[ -n "${ID:-}" ] || ID="${NAME,,}"
+	[ -n "${VERSION_ID:-}" ] || VERSION_ID="unknown"
+	[ -n "${VERSION:-}" ] || VERSION="${VERSION_ID}"
+	[ -n "${PRETTY_NAME:-}" ] || PRETTY_NAME="${NAME} ${VERSION}"
+
+	# First go for the exact version
+	print_for_id "${ID}" "${VERSION}" && exit 0
+
+	ID_LIKE_MSG=""
+	if [ -n "${ID_LIKE:-}" ] ; then
+		ID_LIKE_MSG=", like [${ID_LIKE}]"
+		for ID in ${ID_LIKE} ; do
+			print_for_id "${ID_LIKE}" && exit 0
+		done
+	fi
+	fail "Unsupported OS (${ID} ${VERSION}${ID_LIKE_MSG})"
+) || exit ${?}
+exit 0

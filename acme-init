@@ -197,7 +197,7 @@ add_global_trusts()
 	# First off, add the trusts from the default CACERTS
 	keytool \
 		-importkeystore \
-		-srckeystore "${CACERTS}" \
+		-srckeystore "${OS_SSL_CACERTS}" \
 		-srcstorepass "${CACERTS_PASS}" \
 		-srcstoretype "${CACERTS_TYPE}" \
 		-destkeystore "${KEYSTORE}" \
@@ -220,9 +220,10 @@ set_or_default SSL_DIR "/.ssl"
 set_or_default SSL_TRUSTS_DIR "/.trusts"
 set_or_default KEYSTORE "${SSL_DIR}/keystore.pkcs12"
 set_or_default KEYSTORE_TYPE
-set_or_default PKI_HOME "/etc/pki"
-set_or_default ANCHORS "${PKI_HOME}/ca-trust/source/anchors"
-set_or_default CACERTS "${PKI_HOME}/java/cacerts"
+
+SSL_DIRECTORIES="$(find-ssl-dirs)" || fail "Failed to compute the local SSL configuration"
+source <(echo -n "${SSL_DIRECTORIES}") || fail "Failed to apply the local SSL configuration"
+
 set_or_default CACERTS_PASS "changeit"
 set_or_default CACERTS_TYPE "jks"
 
@@ -279,9 +280,9 @@ is_valid_hostname "${ACME_HOST}" || fail "Malformed URL for the ACME CA: bad hos
 is_valid_port "${ACME_PORT}" || fail "The port in the URL must be between 1 and 65535"
 
 ACME_ROOT_CA_BASENAME="ca-root"
-ACME_ROOT_CA_ANCHOR="${ANCHORS}/${ACME_ROOT_CA_BASENAME}.crt"
+ACME_ROOT_CA_ANCHOR="${OS_SSL_ANCHORS}/${ACME_ROOT_CA_BASENAME}.crt"
 ACME_INT_CA_BASENAME="ca-int"
-ACME_INT_CA_ANCHOR="${ANCHORS}/${ACME_INT_CA_BASENAME}.crt"
+ACME_INT_CA_ANCHOR="${OS_SSL_ANCHORS}/${ACME_INT_CA_BASENAME}.crt"
 
 if as_boolean "${ACME_WAIT}" ; then
 	wait_for_marker "${ACME_WAIT_MARKER}" || fail "ACME client initialization timed out"
@@ -355,7 +356,7 @@ while read cert ; do
 		# If the data is an actual certificate, copy it verbatim
 		*.pem )
 			say "\tDeploying certificate [${CERT}]..."
-			install_chain "${ANCHORS}/${CERT%.*}" < "${cert}"
+			install_chain "${OS_SSL_ANCHORS}/${CERT%.*}" < "${cert}"
 			;;
 
 		# If the data is a URL, then try to pull it down and put the resulting file into
@@ -364,7 +365,7 @@ while read cert ; do
 			URL="$(<"${cert}")"
 			is_valid_url "${URL}" || fail "\tThe certificate [${CERT}] is invalid - the URL syntax is invalid: [${URL}]"
 			say "\tDownloading the certificate [${CERT}] from [${URL}]..."
-			download_chain "${ANCHORS}/${CERT%.*}" "${URL}" || fail "\tFailed to download the certificate [${CERT}] from the URL [${URL}]"
+			download_chain "${OS_SSL_ANCHORS}/${CERT%.*}" "${URL}" || fail "\tFailed to download the certificate [${CERT}] from the URL [${URL}]"
 			;;
 
 		*.ssl )
@@ -379,7 +380,7 @@ while read cert ; do
 			is_valid_hostname "${HOST_NAME}" || fail "\tInvalid host name [${HOST_NAME}] in spec: [${SERVER}] from [${CERT}]"
 			is_valid_port "${PORT}" || fail "\tInvalid port number [${PORT}] in spec: [${SERVER}] from [${CERT}]"
 			say "\tDownloading the certificate [${CERT}] from the SSL server [${SERVER}]..."
-			download_from_port "${HOST_NAME}" "${SERVER_NAME}" "${PORT}" "" "${ANCHORS}" || fail "\tFailed to download the certificate from [${SERVER}] from [${CERT}]"
+			download_from_port "${HOST_NAME}" "${SERVER_NAME}" "${PORT}" "" "${OS_SSL_ANCHORS}" || fail "\tFailed to download the certificate from [${SERVER}] from [${CERT}]"
 			;;
 
 		*.tls )
@@ -397,7 +398,7 @@ while read cert ; do
 				* ) fail "\tInvalid TLS protocol [${PROTOCOL}]" ;;
 			esac
 			say "\tDownloading the certificate [${CERT}] from the TLS server [${SERVER}]..."
-			download_from_port "${HOST_NAME}" "${SERVER_NAME}" "${PORT}" "${PROTOCOL,,}" "${ANCHORS}" || fail "\tFailed to download the certificate from [${SERVER}] from [${CERT}]"
+			download_from_port "${HOST_NAME}" "${SERVER_NAME}" "${PORT}" "${PROTOCOL,,}" "${OS_SSL_ANCHORS}" || fail "\tFailed to download the certificate from [${SERVER}] from [${CERT}]"
 			;;
 
 		* )
@@ -627,12 +628,12 @@ fi
 as_boolean "${ACME_WAIT}" || create_marker "${ACME_WAIT_MARKER}" || warn "Failed to create the wait marker [${ACME_WAIT_MARKER}]"
 
 doing "Updating the trusted certificates"
-chown -R root:root "${ANCHORS}"
-chmod -R a=rwX "${ANCHORS}"
-update-ca-trust extract || fail "Failed to update the CA trusts"
+chown -R root:root "${OS_SSL_ANCHORS}"
+chmod -R a=rwX "${OS_SSL_ANCHORS}"
+( execute "${OS_SSL_UPDATE_CMD[@]}" ) || fail "Failed to update the CA trusts"
 say "\t✅ CA trusts updated system-wide!"
 
-# Add the global trusts (from ${CACERTS}) into the keystore
+# Add the global trusts (from ${OS_SSL_CACERTS}) into the keystore
 
 if as_boolean "${KEYSTORE_GENERATED}" ; then
 	doing "Adding the global trusts to the ${KEYSTORE_TYPE} keystore!"
