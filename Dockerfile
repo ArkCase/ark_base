@@ -132,7 +132,7 @@ ENV ACM_GID="${ACM_GID}"
 RUN groupadd --gid "${ACM_GID}" "${ACM_GROUP}"
 
 # Add the acme-init stuff (only accessible by ACM_GROUP)
-COPY --chown=root:${ACM_GROUP} --chmod=0750 acme-init acme-validate expand-urls /usr/local/bin/
+COPY --chown=root:${ACM_GROUP} --chmod=0750 acme-init acme-validate expand-urls find-ssl-dirs /usr/local/bin/
 COPY --chown=root:root --chmod=0640 00-acme-init /etc/sudoers.d
 RUN sed -i -e "s;\${ACM_GROUP};${ACM_GROUP};g" /etc/sudoers.d/00-acme-init
 
