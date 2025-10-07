@@ -100,6 +100,7 @@ RUN mkdir -p "${HOME}/.pki/nssdb" && \
         findutils \
         jq \
         libpam-pwquality \
+        libxml2-utils \
         openssl \
         python-is-python3 \
         python3 \
