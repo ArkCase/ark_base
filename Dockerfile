@@ -132,11 +132,9 @@ ENV ACM_GID="${ACM_GID}"
 RUN groupadd --gid "${ACM_GID}" "${ACM_GROUP}"
 
 # Add the acme-init stuff (only accessible by ACM_GROUP)
-COPY --chown=root:${ACM_GROUP} acme-init acme-validate expand-urls /usr/local/bin/
-COPY --chown=root:root 00-acme-init /etc/sudoers.d
-RUN chmod 0640 /etc/sudoers.d/00-acme-init && \
-    chmod 0750 /usr/local/bin/acme-init /usr/local/bin/acme-validate /usr/local/bin/expand-urls && \
-    sed -i -e "s;\${ACM_GROUP};${ACM_GROUP};g" /etc/sudoers.d/00-acme-init
+COPY --chown=root:${ACM_GROUP} --chmod=0750 acme-init acme-validate expand-urls /usr/local/bin/
+COPY --chown=root:root --chmod=0640 00-acme-init /etc/sudoers.d
+RUN sed -i -e "s;\${ACM_GROUP};${ACM_GROUP};g" /etc/sudoers.d/00-acme-init
 
 # Copy extra files to the image, and fix permissions for sensitive directories
 COPY ./core/root/ /
