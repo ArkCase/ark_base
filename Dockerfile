@@ -116,6 +116,7 @@ RUN mkdir -p "${HOME}/.pki/nssdb" && \
         wget \
         xmlstarlet \
         xz-utils \
+        zip \
       && \
     apt-get clean
 
