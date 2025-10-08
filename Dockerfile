@@ -87,9 +87,14 @@ ENV DEF_UID="1001"
 ENV DEF_GROUP="${DEF_USER}"
 ENV DEF_GID="${DEF_UID}"
 
+ENV CHARSET="UTF-8"
+ENV LANGUAGE="en_US:en"
+ENV LANG="en_US.${CHARSET}"
+ENV LC_ALL="${LANG}"
+
 RUN mkdir -p "${HOME}/.pki/nssdb" && \
-    echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
-    echo "LANG=en_US.UTF-8" > /etc/default/locale && \
+    echo "${LANG} ${CHARSET}" > /etc/locale.gen && \
+    echo "LANG=${LANG}" > /etc/default/locale && \
     chown -R "${DEF_UID}:${DEF_GID}" "${HOME}/.pki" && \
     apt-get update && \
     apt-get -y dist-upgrade && \
