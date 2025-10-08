@@ -110,6 +110,7 @@ RUN mkdir -p "${HOME}/.pki/nssdb" && \
         libpam-pwquality \
         libxml2-utils \
         locales \
+        lsb-release \
         openssl \
         python-is-python3 \
         python3 \
