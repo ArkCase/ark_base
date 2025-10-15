@@ -81,6 +81,8 @@ LABEL VERSION="${VER}"
 
 ARG BASE_DIR="/app"
 ENV BASE_DIR="${BASE_DIR}"
+ENV TEMP_DIR="${BASE_DIR}/temp"
+ENV LOGS_DIR="${BASE_DIR}/logs"
 
 ENV DEF_USER="default"
 ENV DEF_UID="1001"
@@ -130,8 +132,7 @@ RUN mkdir -p "${HOME}/.pki/nssdb" && \
 RUN groupadd --system --gid "${DEF_GID}" "${DEF_GROUP}" && \
     useradd --system --uid "${DEF_UID}" --gid "${DEF_GID}" --home-dir "${HOME}" --shell /sbin/nologin \
         --comment "Default Application User" "${DEF_USER}" && \
-    chown -R "${DEF_USER}:${DEF_GROUP}" ${APP_ROOT} && \
-    mkdir -p "${BASE_DIR}"
+    chown -R "${DEF_USER}:${DEF_GROUP}" ${APP_ROOT}
 
 # Install gucci
 COPY --chown=root:root --chmod=0755 --from=gucci /gucci /usr/local/bin/gucci
@@ -169,6 +170,8 @@ ENV CURL_HOME="/etc/curl"
 COPY --chown=root:root --chmod=0644 curlrc "${CURL_HOME}/.curlrc"
 
 COPY --chown=root:root --chmod=0755 apply-fixes /usr/local/bin/
+
+RUN mkdir -p "${BASE_DIR}" "${TEMP_DIR}" "${LOGS_DIR}"
 
 # FINAL STEP: ensure all sensitive directories are duly protected
 RUN secure-permissions
