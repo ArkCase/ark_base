@@ -138,7 +138,8 @@ RUN mkdir -p "${HOME}/.pki/nssdb" && \
 RUN groupadd --system --gid "${DEF_GID}" "${DEF_GROUP}" && \
     useradd --system --uid "${DEF_UID}" --gid "${DEF_GID}" --home-dir "${HOME}" --shell /sbin/nologin \
         --comment "Default Application User" "${DEF_USER}" && \
-    groupdel tape floppy && \
+    groupdel tape && \
+    groupdel floppy && \
     groupmod --gid 25 sudo && \
     chown -R "${DEF_USER}:${DEF_GROUP}" ${APP_ROOT}
 
