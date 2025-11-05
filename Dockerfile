@@ -131,10 +131,12 @@ RUN mkdir -p "${HOME}/.pki/nssdb" && \
       && \
     apt-get clean
 
-# Reset permissions of modified directories and add default user
+# Reset permissions of modified directories and add default user. We remove the "tape"
+# group because it can interfere with other stuff we're interested in
 RUN groupadd --system --gid "${DEF_GID}" "${DEF_GROUP}" && \
     useradd --system --uid "${DEF_UID}" --gid "${DEF_GID}" --home-dir "${HOME}" --shell /sbin/nologin \
         --comment "Default Application User" "${DEF_USER}" && \
+    groupdel tape && \
     chown -R "${DEF_USER}:${DEF_GROUP}" ${APP_ROOT}
 
 # Install gucci
