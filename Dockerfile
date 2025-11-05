@@ -123,6 +123,7 @@ RUN mkdir -p "${HOME}/.pki/nssdb" && \
         sudo \
         tar \
         unzip \
+        uuid-runtime \
         wget \
         xmlstarlet \
         xz-utils \
