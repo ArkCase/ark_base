@@ -110,6 +110,7 @@ RUN mkdir -p "${HOME}/.pki/nssdb" && \
         dnsutils \
         findutils \
         gettext-base \
+        inotify-tools \
         jq \
         libpam-pwquality \
         libxml2-utils \
