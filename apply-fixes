@@ -18,9 +18,9 @@ for DIR in "${@}" ; do
 		"${FIX}" || fail "Failed to apply the fix from ${FIX} (rc=${?})"
 		(( ++COUNT ))
 		rm -f "${FIX}" &>/dev/null || true
-	done < <(find "${DIR}" -mindepth 1 -maxdepth 1 -type f)
+	done < <(find "${DIR}" -mindepth 1 -maxdepth 1 -type f -not -name '.*' -executable)
 
-	rmdir "${DIR}" || warn "Failed to remove the fixes directory at [${DIR}]"
+	rm -rf "${DIR}" || warn "Failed to remove the fixes directory at [${DIR}]"
 
 	ok "${COUNT} fixes applied from [${DIR}]!"
 done
