@@ -70,6 +70,9 @@ ENV DESCRIPTION="This image provides any images layered on top of it \
 with all the tools needed to use hardened and secure functionality while keeping \
 the image size as small as possible."
 
+# The system-wide CA trusts
+ENV CA_TRUSTS_PEM="/etc/ssl/certs/ca-certificates.crt"
+
 LABEL summary="${SUMMARY}" \
       description="${DESCRIPTION}" \
       io.k8s.description="${DESCRIPTION}" \
