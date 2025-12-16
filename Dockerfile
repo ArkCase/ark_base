@@ -75,6 +75,9 @@ ENV HOME="${APP_ROOT}/src" \
     PATH="${APP_ROOT}/src/bin:${APP_ROOT}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
     PLATFORM="${PLATFORM}"
 
+# The system-wide CA trusts
+ENV CA_TRUSTS_PEM="/etc/pki/tls/cert.pem"
+
 ENV SUMMARY="Base image which allows using of source-to-image." \
     DESCRIPTION="The s2i-core image provides any images layered on top of it \
 with all the tools needed to use source-to-image functionality while keeping \
