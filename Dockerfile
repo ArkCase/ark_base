@@ -35,7 +35,7 @@ ARG ACM_GID="10000"
 ARG ACM_GROUP="acm"
 
 # ARG BASE_REPO="registry.stage.redhat.io/ubi8/ubi"
-ARG BASE_REPO="docker.io/rockylinux"
+ARG BASE_REPO="rockylinux/rockylinux"
 ARG BASE_IMG="${BASE_REPO}:${VER}"
 
 ARG GUCCI_REGISTRY="${PRIVATE_REGISTRY}"
