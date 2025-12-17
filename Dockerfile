@@ -67,7 +67,7 @@ RUN mkdir -p "${SRCPATH}" && \
     go mod edit -go "${GO}" && \
     go get -u && \
     go mod tidy && \
-    go install -v && \
+    go install -v -ldflags "-X main.AppVersion='${GUCCI_VER}' -w -extldflags static" && \
     cp -vf /go/bin/gucci /gucci
 
 ARG STEP_REBUILD_IMG
