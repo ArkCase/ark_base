@@ -34,20 +34,44 @@ ARG ACM_GROUP="acm"
 ARG BASE_REPO="docker.io/library/ubuntu"
 ARG BASE_IMG="${BASE_REPO}:${VER}"
 
-ARG GUCCI_REGISTRY="${PRIVATE_REGISTRY}"
-ARG GUCCI_REPO="arkcase/rebuild-gucci"
-ARG GUCCI_TAG="latest"
-ARG GUCCI_IMG="${GUCCI_REGISTRY}/${GUCCI_REPO}:${GUCCI_TAG}"
-
 ARG STEP_VER="0.29.0"
 ARG STEP_REBUILD_REGISTRY="${PRIVATE_REGISTRY}"
 ARG STEP_REBUILD_REPO="arkcase/rebuild-step-ca"
 ARG STEP_REBUILD_TAG="${STEP_VER}"
 ARG STEP_REBUILD_IMG="${STEP_REBUILD_REGISTRY}/${STEP_REBUILD_REPO}:${STEP_REBUILD_TAG}"
 
-FROM "${GUCCI_IMG}" AS gucci
+ARG GO="1.24"
+ARG BUILDER_IMAGE="golang"
+ARG BUILDER_VER="${GO}-alpine"
+ARG BUILDER_IMG="${BUILDER_IMAGE}:${BUILDER_VER}"
+
+FROM "${BUILDER_IMG}" AS gucci
+
+ARG GO
+ARG GUCCI_REPO="https://github.com/noqcks/gucci.git"
+ARG GUCCI_VER="1.9.0"
+
+RUN apk --no-cache add git
+
+ENV SRCPATH="/build/gucci"
+ENV GO111MODULE="on"
+ENV CGO_ENABLED="0"
+ENV GOOS="linux"
+ENV GOARCH="amd64"
+RUN mkdir -p "${SRCPATH}" && \
+    cd "${SRCPATH}" && \
+    git clone "${GUCCI_REPO}" "." --branch="v${GUCCI_VER}" && \
+    go mod edit -go "${GO}" && \
+    go get -u && \
+    go mod tidy && \
+    go install -v && \
+    cp -vf /go/bin/gucci /gucci
+
+ARG STEP_REBUILD_IMG
 
 FROM "${STEP_REBUILD_IMG}" AS step
+
+ARG BASE_IMG
 
 FROM "${BASE_IMG}"
 
