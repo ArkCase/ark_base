@@ -209,7 +209,8 @@ COPY --chown=root:root --chmod=0644 curlrc "${CURL_HOME}/.curlrc"
 
 COPY --chown=root:root --chmod=0755 apply-fixes /usr/local/bin/
 
-RUN mkdir -p "${BASE_DIR}" "${CONF_DIR}" "${DATA_DIR}" "${LOGS_DIR}" "${TEMP_DIR}"
+RUN mkdir -p "${BASE_DIR}" "${CONF_DIR}" "${DATA_DIR}" "${LOGS_DIR}" "${TEMP_DIR}" && \
+    chown -R ug=rwX,o= "${TEMP_DIR}"
 
 # FINAL STEP: ensure all sensitive directories are duly protected
 RUN secure-permissions
