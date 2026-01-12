@@ -1494,3 +1494,37 @@ get_cluster_domain()
 	# Let's see what we can do
 	hostname -f | sed -e "s;^.*\.${NAMESPACE}\.svc\.;;g"
 }
+
+#
+# usage: run_and_capture cmd [args ...]
+#
+# Run the command, capture its STDOUT into the variable named "${OUT}",
+# its STDERR into the variable named "${ERR}", and return its exit status.
+#
+# It will output a JSON structure with the captured "stdout" and "stderr"
+# values
+#
+run_and_capture()
+{
+	local STDOUT=""
+	local STDERR=""
+	local RC="0"
+	local CMD=( "${@}" )
+
+	if [ ${#CMD[@]} -lt 1 ] ; then
+		jq -cn --arg RC 999 '{ "status": ($RC | tonumber) }'
+		return 1
+	fi
+
+	{
+		IFS=$'\n' read -r -d '' STDERR
+		IFS=$'\n' read -r -d '' STDOUT
+		IFS=$'\n' read -r -d '' RC
+	} < <( ( printf '\0%s\0%d\0' "$( exec "${CMD[@]}" )" "${?}" 1>&2 ) 2>&1 )
+
+	jq -cn \
+		--arg OUT "${STDOUT}" \
+		--arg ERR "${STDERR}" \
+		--arg RC "${RC}" '{ "stdout": $OUT, "stderr": $ERR, "status": ($RC | tonumber) }'
+	return ${RC}
+}
