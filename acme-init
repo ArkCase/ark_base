@@ -237,6 +237,9 @@ set_or_default SSL_EXTRA_SAN
 set_as_boolean SSL_EXTRA_SAN_STRICT
 set_or_default SSL_SERVICE_EXTRA_NAMES
 
+set_as_boolean SSL_DH_APPEND "false"
+set_or_default SSL_DH_SIZE "1024"
+
 set_or_default DEFAULT_PBE "AES-256-CBC"
 set_or_default PKCS12_KEY_PBE "${DEFAULT_PBE}"
 set_or_default PKCS12_CERT_PBE "${DEFAULT_PBE}"
@@ -526,6 +529,11 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			SAN_ARG+=(--san "${S}")
 		done < <(echo "${SAN[@]}" | tr '[:space:]' '\n' | sed -e '/^\s*$/d' | sort -u)
 
+		if as_boolean "${SSL_DH_APPEND}" ; then
+			doing "Rendering the Diffie-Hellman parameters..."
+			OUT="$(openssl dhparam -outform pem -out "${SSL_DIR}/dh.pem" "${SSL_DH_SIZE}" 2>&1)"  || fail "Failed to generate the DH parameters (rc=${?}): ${OUT}"
+		fi
+
 		doing "Rendering a new certificate for this pod's use"
 		step ca certificate \
 			"${FQDN}" "${SSL_DIR}/cert.pem" "${SSL_DIR}/cert.key" \
@@ -600,6 +608,11 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			-passout env:STOREPASS
 		say "\t✅ Ready!"
 		KEYSTORE_GENERATED="true"
+	fi
+
+	if as_boolean "${SSL_DH_APPEND}" ; then
+		doing "Appending Diffie-Hellman parameters to the certificate"
+		( echo "" ; cat "${SSL_DIR}/dh.pem" ) >> "${SSL_DIR}/cert.pem" || fail "Failed to append the DH parameters to the certifiate"
 	fi
 
 	doing "Setting tight permissions for the generated data..."
