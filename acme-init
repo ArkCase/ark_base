@@ -373,35 +373,27 @@ while read cert ; do
 
 		*.ssl )
 			SERVER="$(<"${cert}")"
-			[[ "${SERVER}" =~ ^(([^@]+)@)?(([^:]+):([0-9]+))$ ]] || fail "\tThe certificate [${CERT}] is invalid - the SSL server string [${SERVER}] did not match the required pattern ([serverName@]hostNameOrIP:port)"
+			[[ "${SERVER}" =~ ^(([^@]+)@)?(([^:]+):([0-9]+))(/(.*))?$ ]] || fail "\tThe certificate [${CERT}] is invalid - the server string [${SERVER}] did not match the required pattern ([serverName@]hostNameOrIP:port[/tls-protocol])"
 			SERVER_NAME="${BASH_REMATCH[2]}"
 			HOST_NAME="${BASH_REMATCH[4]}"
 			PORT="${BASH_REMATCH[5]}"
+			TLS_PROTOCOL_STR="${BASH_REMATCH[6]}"
+			TLS_PROTOCOL="${BASH_REMATCH[7],,}"
 			if [ -n "${SERVER_NAME}" ] ; then
 				is_valid_hostname "${SERVER_NAME}" || fail "\tInvalid server name [${SERVER_NAME}] in spec [${SERVER}] from [${CERT}]"
 			fi
 			is_valid_hostname "${HOST_NAME}" || fail "\tInvalid host name [${HOST_NAME}] in spec: [${SERVER}] from [${CERT}]"
 			is_valid_port "${PORT}" || fail "\tInvalid port number [${PORT}] in spec: [${SERVER}] from [${CERT}]"
-			say "\tDownloading the certificate [${CERT}] from the SSL server [${SERVER}]..."
-			download_from_port "${HOST_NAME}" "${SERVER_NAME}" "${PORT}" "" "${OS_SSL_ANCHORS}" || fail "\tFailed to download the certificate from [${SERVER}] from [${CERT}]"
-			;;
-
-		*.tls )
-			SERVER="$(<"${cert}")"
-			[[ "${SERVER}" =~ ^(([^@]+)@)?(([^:]+):([0-9]+))(/(.*))$ ]] || fail "\tThe certificate [${CERT}] is invalid - the TLS server string [${SERVER}] did not match the required pattern ([serverName@]hostNameOrIP:port/protocol)"
-			SERVER_NAME="${BASH_REMATCH[2]}"
-			HOST_NAME="${BASH_REMATCH[4]}"
-			PORT="${BASH_REMATCH[5]}"
-			PROTOCOL="${BASH_REMATCH[7]}"
-			[ -n "${SERVER_NAME}" ] || is_valid_hostname "${SERVER_NAME}" || fail "\tInvalid server name [${SERVER_NAME}] in spec [${SERVER}] from [${CERT}]"
-			is_valid_hostname "${HOST_NAME}" || fail "\tInvalid host name [${HOST_NAME}] in spec: [${SERVER}] from [${CERT}]"
-			is_valid_port "${PORT}" || fail "\tInvalid port number [${PORT}] in spec: [${SERVER}] from [${CERT}]"
-			case "${PROTOCOL,,}" in
-				ftp | imap | irc | ldap | lmtp | mysql | nntp | pop3 | postgres | sieve | smtp | xmpp | xmpp-server ) ;;
-				* ) fail "\tInvalid TLS protocol [${PROTOCOL}]" ;;
-			esac
-			say "\tDownloading the certificate [${CERT}] from the TLS server [${SERVER}]..."
-			download_from_port "${HOST_NAME}" "${SERVER_NAME}" "${PORT}" "${PROTOCOL,,}" "${OS_SSL_ANCHORS}" || fail "\tFailed to download the certificate from [${SERVER}] from [${CERT}]"
+			DESCRIPTION="SSL server [${SERVER}]"
+			if [ -n "${TLS_PROTOCOL_STR}" ] ; then
+				case "${TLS_PROTOCOL}" in
+					ftp | imap | irc | ldap | lmtp | mysql | nntp | pop3 | postgres | sieve | smtp | xmpp | xmpp-server ) ;;
+					* ) fail "\tUnsupported TLS protocol [${TLS_PROTOCOL}]" ;;
+				esac
+				DESCRIPTION="TLS server [${SERVER}] (${TLS_PROTOCOL})"
+			fi
+			say "\tDownloading the certificate [${CERT}] from the ${DESCRIPTION} ..."
+			download_from_port "${HOST_NAME}" "${SERVER_NAME}" "${PORT}" "${TLS_PROTOCOL}" "${OS_SSL_ANCHORS}" || fail "\tFailed to download the certificate from the ${DESCRIPTION} as requested by [${CERT}]"
 			;;
 
 		* )
