@@ -207,6 +207,11 @@ add_global_trusts()
 		< /dev/null || err "Could not append the global trusts (cacerts)"
 }
 
+expand_vars()
+{
+	eval echo -n "${@}"
+}
+
 if "$(to_boolean "${ACME_DISABLE:-false}")" ; then
 	ok "ACME Processing is disabled by configuration (ACME_DISABLE == ${ACME_DISABLE})"
 	exit 0
@@ -361,14 +366,16 @@ while read cert ; do
 		# If the data is a URL, then try to pull it down and put the resulting file into
 		# the correct location using ${CERT} as the name
 		*.url )
-			URL="$(<"${cert}")"
+			STR="$(<"${cert}")"
+			URL="$(expand_vars "${STR}" 2>&1)" || fail "Failed to expand the environment variables contained in [${STR}] (rc=${?}): ${URL}"
 			is_valid_url "${URL}" || fail "\tThe certificate [${CERT}] is invalid - the URL syntax is invalid: [${URL}]"
 			say "\tDownloading the certificate [${CERT}] from [${URL}]..."
 			download_chain "${ANCHORS}/${CERT%.*}" "${URL}" || fail "\tFailed to download the certificate [${CERT}] from the URL [${URL}]"
 			;;
 
 		*.ssl )
-			SERVER="$(<"${cert}")"
+			STR="$(<"${cert}")"
+			SERVER="$(expand_vars "${STR}" 2>&1)" || fail "Failed to expand the environment variables contained in [${STR}] (rc=${?}): ${SERVER}"
 			[[ "${SERVER}" =~ ^(([^@]+)@)?(([^:]+):([0-9]+))(/(.*))?$ ]] || fail "\tThe certificate [${CERT}] is invalid - the server string [${SERVER}] did not match the required pattern ([serverName@]hostNameOrIP:port[/tls-protocol])"
 			SERVER_NAME="${BASH_REMATCH[2]}"
 			HOST_NAME="${BASH_REMATCH[4]}"
