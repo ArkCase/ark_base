@@ -371,7 +371,7 @@ while read cert ; do
 		# the correct location using ${CERT} as the name
 		*.url )
 			STR="$(<"${cert}")"
-			URL="$(expand_vars "${STR}" 2>&1)" || fail "Failed to expand the environment variables contained in [${STR}] (rc=${?}): ${URL}"
+			URL="$(expand_vars "${STR}" 2>&1)" || { warn "Failed to expand the environment variables contained in [${STR}] (rc=${?}): ${URL}" ; continue ; }
 			is_valid_url "${URL}" || fail "\tThe certificate [${CERT}] is invalid - the URL syntax is invalid: [${URL}]"
 			say "\tDownloading the certificate [${CERT}] from [${URL}]..."
 			download_chain "${OS_SSL_ANCHORS}/${CERT%.*}" "${URL}" || fail "\tFailed to download the certificate [${CERT}] from the URL [${URL}]"
@@ -379,7 +379,7 @@ while read cert ; do
 
 		*.ssl )
 			STR="$(<"${cert}")"
-			SERVER="$(expand_vars "${STR}" 2>&1)" || fail "Failed to expand the environment variables contained in [${STR}] (rc=${?}): ${SERVER}"
+			SERVER="$(expand_vars "${STR}" 2>&1)" || { warn "Failed to expand the environment variables contained in [${STR}] (rc=${?}): ${SERVER}" ; continue ; }
 			[[ "${SERVER}" =~ ^(([^@]+)@)?(([^:]+):([0-9]+))(/(.*))?$ ]] || fail "\tThe certificate [${CERT}] is invalid - the server string [${SERVER}] did not match the required pattern ([serverName@]hostNameOrIP:port[/tls-protocol])"
 			SERVER_NAME="${BASH_REMATCH[2]}"
 			HOST_NAME="${BASH_REMATCH[4]}"
