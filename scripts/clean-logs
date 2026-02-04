@@ -1,0 +1,83 @@
+#!/bin/bash
+set -euo pipefail
+. /.functions
+define_base_vars
+
+if [ ${#} -gt 0 ] ; then
+
+	usage()
+	{
+		{
+			[ ${#} -eq 0 ] || err "${@}\n"
+			echo -e "usage: ${BASH_ARGV0:-${BASH_SOURCE:-${0}}} [ -h | -? | --help ] [ -d days | --days days ] [ --dry-run ] [ directory ]"
+		} 1>&2
+		exit 1
+	}
+
+	ARGS="$(getopt -o "h?d:" -l "help,days:,dry-run" -n "${__SCRIPT}" -- "${@}")" || usage
+
+	export LOGS_CLEANUP="true"
+
+	DAYS_SET="false"
+
+	eval set -- "${ARGS}"
+	while true ; do
+		case "${1}" in
+			--help | -h | "-?" ) usage ;;
+
+			-- ) shift ; break ;;
+
+			--days | -d )
+				as_boolean "${DAYS_SET}" && usage "May only provide ${1} once"
+				DAYS_SET="true"
+				export LOGS_MAX_DAYS="${2}"
+				shift 2
+				;;
+
+			--dry-run )
+				export LOGS_DRY_RUN="true"
+				shift
+				;;
+		esac
+	done
+
+	case "${#}" in
+		1 ) export LOGS_DIR="${1}" ; shift ;;
+		0 ) ;;
+		* ) usage ;;
+	esac
+
+	export LOGS_CLEANUP="true"
+fi
+
+set_or_default BASE_DIR "/app"
+set_or_default LOGS_DIR "${BASE_DIR}/logs"
+set_or_default LOGS_MAX_DAYS "90"
+set_as_boolean LOGS_CLEANUP "false"
+set_as_boolean LOGS_DRY_RUN "false"
+
+as_boolean "${LOGS_CLEANUP}" || quit "Log cleanup is disabled"
+[[ "${LOGS_MAX_DAYS}" =~ ^(0|[1-9][0-9]*)$ ]] || fail "Invalid log days count [${LOGS_MAX_DAYS}]"
+
+is_dir_readable "${LOGS_DIR}" || quit "The log directory [${LOGS_DIR}] does not exist - no cleanup performed"
+require_dir_writable "${LOGS_DIR}"
+
+DRY_RUN_FLAGS=( -print )
+DRY_RUN_MSG="(DRY RUN): "
+if ! as_boolean "${LOGS_DRY_RUN}" ; then
+	DRY_RUN_MSG=""
+	DRY_RUN_FLAGS=( -exec rm -fv "{}" ";" )
+fi
+
+doing "${DRY_RUN_MSG}Deleting all log files at [${LOGS_DIR}] older than ${LOGS_MAX_DAYS} days ..."
+CMD=( find "${LOGS_DIR}" -type f -mtime "+${LOGS_MAX_DAYS}" "${DRY_RUN_FLAGS[@]}" )
+COUNT=0
+while read FILE ; do
+	if as_boolean "${LOGS_DRY_RUN}" ; then
+		echo -e "\twould delete ${FILE@Q}"
+	else
+		echo -e "\t${FILE}"
+	fi
+	(( ++COUNT ))
+done < <( "${CMD[@]}" )
+ok "${DRY_RUN_MSG}Deleted ${COUNT} stale logs"
