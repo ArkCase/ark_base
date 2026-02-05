@@ -173,7 +173,9 @@ RUN groupadd --system --gid "${DEF_GID}" "${DEF_GROUP}" && \
     groupdel tape && \
     groupdel floppy && \
     groupmod --gid 25 sudo && \
-    chown -R "${DEF_USER}:${DEF_GROUP}" ${APP_ROOT}
+    mkdir -p "${HOME}/bin" "${APP_ROOT}/bin" && \
+    chown -R "${DEF_USER}:${DEF_GROUP}" "${APP_ROOT}" "${HOME}" && \
+    chmod -R u=rwX,g=rX,o= "${DEF_USER}:${DEF_GROUP}" "${APP_ROOT}" "${HOME}"
 
 # Install gucci
 COPY --chown=root:root --chmod=0755 --from=gucci /gucci /usr/local/bin/gucci
