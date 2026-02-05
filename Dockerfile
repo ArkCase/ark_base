@@ -127,6 +127,7 @@ ENV LC_ALL="${LANG}"
 RUN mkdir -p "${HOME}/.pki/nssdb" && \
     echo "${LANG} ${CHARSET}" > /etc/locale.gen && \
     echo "LANG=${LANG}" > /etc/default/locale && \
+    userdel --remove ubuntu && \
     chown -R "${DEF_UID}:${DEF_GID}" "${HOME}/.pki" && \
     apt-get update && \
     apt-get -y dist-upgrade && \
