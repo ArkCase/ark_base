@@ -141,7 +141,9 @@ RUN mkdir -p "${HOME}/.pki/nssdb" && \
         gettext-base \
         inotify-tools \
         jq \
+        libpam-modules \
         libpam-pwquality \
+        libpam-runtime \
         libxml2-utils \
         locales \
         lsb-release \
