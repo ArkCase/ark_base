@@ -167,8 +167,8 @@ RUN mkdir -p "${HOME}/.pki/nssdb" && \
 # and "floppy" groups because they can interfere with other stuff we're interested in.
 #
 # In that same vein, we remap the GID for sudo from 27 to 25
-RUN groupadd --system --gid "${DEF_GID}" "${DEF_GROUP}" && \
-    useradd --system --uid "${DEF_UID}" --gid "${DEF_GID}" --home-dir "${HOME}" --shell /sbin/nologin \
+RUN groupadd --gid "${DEF_GID}" "${DEF_GROUP}" && \
+    useradd --uid "${DEF_UID}" --gid "${DEF_GID}" --home-dir "${HOME}" --shell /sbin/nologin \
         --comment "Default Application User" "${DEF_USER}" && \
     groupdel tape && \
     groupdel floppy && \
