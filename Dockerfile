@@ -34,11 +34,11 @@ ARG ACM_GROUP="acm"
 ARG BASE_REPO="docker.io/library/ubuntu"
 ARG BASE_IMG="${BASE_REPO}:${VER}"
 
+ARG STEP_REGISTRY="${PRIVATE_REGISTRY}"
+ARG STEP_REPO="arkcase/rebuild-step-ca"
 ARG STEP_VER="0.29.0"
-ARG STEP_REBUILD_REGISTRY="${PRIVATE_REGISTRY}"
-ARG STEP_REBUILD_REPO="arkcase/rebuild-step-ca"
-ARG STEP_REBUILD_TAG="${STEP_VER}"
-ARG STEP_REBUILD_IMG="${STEP_REBUILD_REGISTRY}/${STEP_REBUILD_REPO}:${STEP_REBUILD_TAG}"
+ARG STEP_VER_PFX="${BASE_VER_PFX}"
+ARG STEP_IMG="${STEP_REGISTRY}/${STEP_REPO}:${STEP_VER_PFX}${STEP_VER}"
 
 ARG GO="1.24"
 ARG BUILDER_IMAGE="golang"
@@ -67,9 +67,9 @@ RUN mkdir -p "${SRCPATH}" && \
     go install -v -ldflags "-X main.AppVersion='${GUCCI_VER}' -w -extldflags static" && \
     cp -vf /go/bin/gucci /gucci
 
-ARG STEP_REBUILD_IMG
+ARG STEP_IMG
 
-FROM "${STEP_REBUILD_IMG}" AS step
+FROM "${STEP_IMG}" AS step
 
 ARG BASE_IMG
 
