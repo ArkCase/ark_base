@@ -86,7 +86,7 @@ ARG ACM_GID
 
 ENV APP_ROOT="/opt/app"
 ENV HOME="${APP_ROOT}/src"
-ENV PATH="${HOME}/bin:${APP_ROOT}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ENV PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 ENV PLATFORM="${PLATFORM}"
 
 ENV SUMMARY="Base ArkCase image for support containers"
