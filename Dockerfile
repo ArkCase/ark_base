@@ -53,6 +53,7 @@ ARG GUCCI_VER="1.9.0"
 
 RUN apk --no-cache add git
 
+ENV PROMPT_COMMAND="printf \"\033]0;%s@%s:%s\007\" \"${USER}\" \"${HOSTNAME%%.*}\" \"${PWD/#$HOME/\~}\""
 ENV SRCPATH="/build/gucci"
 ENV GO111MODULE="on"
 ENV CGO_ENABLED="0"
@@ -134,6 +135,7 @@ RUN mkdir -p "${HOME}/.pki/nssdb" && \
     apt-get -y install \
         acl \
         attr \
+        bash-completion \
         bind9-utils \
         curl \
         dnsutils \
