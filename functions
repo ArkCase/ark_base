@@ -682,6 +682,8 @@ csv_to_list()
 to_array()
 {
 	local __VAR="${1}"
+	[ -v "${__VAR}" ] || return 1
+
 	local __EXPORT="false"
 	case "$(__get_var_flags "${__VAR}")" in
 		# Ignore arrays and read-only variables
@@ -692,24 +694,24 @@ to_array()
 		*x* ) __EXPORT="true" ;;
 	esac
 
-	if [ -v "${__VAR}" ] ; then
-		# Do the conversion
-		local __V="${!__VAR}"
+	# Do the conversion
+	local __V="${!__VAR}"
+
+	if [ -z "${__V}" ] ; then
 		# Empty strings should convert to empty arrays
-		if [ -n "${__V}" ] ; then
-			# This will yield a non-empty array
-			readarray -t "${__VAR}" < <(to_list "${!__VAR}")
-		else
-			# Make sure it's an empty array
-			unset "${__VAR}"
-			declare -ga "${__VAR}"
-		fi
-		# Restore the export flag
-		"${__EXPORT}" && declare -x "${__VAR}"
-	else
-		# Do the declaration
+		unset "${__VAR}"
 		declare -ga "${__VAR}"
+	else
+		# This will yield a non-empty array
+		local __LIST=""
+		__LIST="$(to_list "${__V}")" || return 1
+		unset "${__VAR}"
+		declare -ga "${__VAR}"
+		readarray -t "${__VAR}" < <(echo -n "${__LIST}")
 	fi
+
+	# Restore the export flag
+	as_boolean "${__EXPORT}" && declare -x "${__VAR}"
 	return 0
 }
 
