@@ -682,7 +682,11 @@ csv_to_list()
 to_array()
 {
 	local __VAR="${1}"
-	[ -v "${__VAR}" ] || return 1
+
+	# BUGFIX: make the behavior consistent with the old code.
+	# If the variable is not declared, then declare it as an
+	# empty array
+	[ -v "${__VAR}" ] || { declare -ga "${__VAR}" ; return 0 ; }
 
 	local __EXPORT="false"
 	case "$(__get_var_flags "${__VAR}")" in
