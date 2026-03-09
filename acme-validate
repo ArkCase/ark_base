@@ -53,11 +53,13 @@ openssl verify -CAfile "${SSL_DIR}/ca-root.pem" "${SSL_DIR}/ca-int.pem" &>/dev/n
 openssl verify -CAfile <(cat "${SSL_DIR}/ca-int.pem" "${SSL_DIR}/ca-root.pem") "${SSL_DIR}/cert.pem" &>/dev/null || fail "The certificate isn't signed by the intermediate CA"
 
 # Are the int and root certs deployed to the anchor directories?
-set_or_default ANCHORS "/etc/pki/ca-trust/source/anchors"
+
+SSL_DIRECTORIES="$(find-ssl-dirs)" || fail "Failed to compute the local SSL configuration"
+source <(echo -n "${SSL_DIRECTORIES}") || fail "Failed to apply the local SSL configuration"
 
 for n in ca-int ca-root ; do
 	MASTER="${SSL_DIR}/${n}.pem"
-	ANCHOR="${ANCHORS}/${n}.crt"
+	ANCHOR="${OS_SSL_ANCHORS}/${n}.crt"
 	[ -f "${MASTER}" ] || fail "The master certificate [${MASTER}] does not exist"
 	[ -f "${ANCHOR}" ] || fail "The anchor certificate [${ANCHOR}] does not exist"
 

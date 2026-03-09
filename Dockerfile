@@ -1,5 +1,3 @@
-# When we are ready to switch to RHEL, this image will be replaced with registry.access.redhat.com/ubi8/s2i-core:latest
-
 ###########################################################################################################
 #
 # How to build:
@@ -21,27 +19,26 @@
 #
 ###########################################################################################################
 
-###########################################################################################################
-# START: Base Image simliar to registry.access.redhat.com/ubi8/s2i-core:latest ############################
-###########################################################################################################
-
 ARG PRIVATE_REGISTRY
-ARG VER="8"
+ARG VER="24.04"
 ARG ARCH="x86_64"
 ARG OS="linux"
 ARG PKG="base"
-ARG PLATFORM="el8"
+ARG PLATFORM="ubuntu:${VER}"
 ARG ACM_GID="10000"
 ARG ACM_GROUP="acm"
 
-# ARG BASE_REPO="registry.stage.redhat.io/ubi8/ubi"
-ARG BASE_REPO="rockylinux/rockylinux"
+# TODO: Swap the BASE_REGISTRY and BASE_REPO to the secure UBI
+# once we get Ubuntu Pro into the mix
+# ARG BASE_REGISTRY="docker.io"
+ARG BASE_REPO="docker.io/library/ubuntu"
 ARG BASE_IMG="${BASE_REPO}:${VER}"
 
-ARG STEP_REBUILD_REGISTRY="${PRIVATE_REGISTRY}"
-ARG STEP_REBUILD_REPO="arkcase/rebuild-step-ca"
-ARG STEP_REBUILD_TAG="latest"
-ARG STEP_REBUILD_IMG="${STEP_REBUILD_REGISTRY}/${STEP_REBUILD_REPO}:${STEP_REBUILD_TAG}"
+ARG STEP_REGISTRY="${PRIVATE_REGISTRY}"
+ARG STEP_REPO="arkcase/rebuild-step-ca"
+ARG STEP_VER="0.29.0"
+ARG STEP_VER_PFX="${BASE_VER_PFX}"
+ARG STEP_IMG="${STEP_REGISTRY}/${STEP_REPO}:${STEP_VER_PFX}${STEP_VER}"
 
 ARG GO="1.24"
 ARG BUILDER_IMAGE="golang"
@@ -56,6 +53,7 @@ ARG GUCCI_VER="1.9.0"
 
 RUN apk --no-cache add git
 
+ENV PROMPT_COMMAND="printf \"\033]0;%s@%s:%s\007\" \"${USER}\" \"${HOSTNAME%%.*}\" \"${PWD/#$HOME/\~}\""
 ENV SRCPATH="/build/gucci"
 ENV GO111MODULE="on"
 ENV CGO_ENABLED="0"
@@ -70,9 +68,9 @@ RUN mkdir -p "${SRCPATH}" && \
     go install -v -ldflags "-X main.AppVersion='${GUCCI_VER}' -w -extldflags static" && \
     cp -vf /go/bin/gucci /gucci
 
-ARG STEP_REBUILD_IMG
+ARG STEP_IMG
 
-FROM "${STEP_REBUILD_IMG}" AS step
+FROM "${STEP_IMG}" AS step
 
 ARG BASE_IMG
 
@@ -87,36 +85,23 @@ ARG PLATFORM
 ARG ACM_GROUP
 ARG ACM_GID
 
-#
-# Based on https://catalog.redhat.com/software/containers/ubi8/s2i-core/5c83967add19c77a15918c27?container-tabs=dockerfile
-# ( Click Cancel whe it prompts you to login )
-#
-
-ENV STI_SCRIPTS_PATH="/usr/libexec/s2i"
-ENV STI_SCRIPTS_URL="image://${STI_SCRIPTS_PATH}"
 ENV APP_ROOT="/opt/app"
-ENV HOME="${APP_ROOT}/src" \
-    PATH="${APP_ROOT}/src/bin:${APP_ROOT}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
-    PLATFORM="${PLATFORM}"
+ENV HOME="${APP_ROOT}/src"
+ENV PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ENV PLATFORM="${PLATFORM}"
+
+ENV SUMMARY="Base ArkCase image for support containers"
+ENV DESCRIPTION="This image provides any images layered on top of it \
+with all the tools needed to use hardened and secure functionality while keeping \
+the image size as small as possible."
 
 # The system-wide CA trusts
-ENV CA_TRUSTS_PEM="/etc/pki/tls/cert.pem"
-
-ENV SUMMARY="Base image which allows using of source-to-image." \
-    DESCRIPTION="The s2i-core image provides any images layered on top of it \
-with all the tools needed to use source-to-image functionality while keeping \
-the image size as small as possible."
+ENV CA_TRUSTS_PEM="/etc/ssl/certs/ca-certificates.crt"
 
 LABEL summary="${SUMMARY}" \
       description="${DESCRIPTION}" \
       io.k8s.description="${DESCRIPTION}" \
-      io.k8s.display-name="s2i core" \
-      io.openshift.s2i.scripts-url="image://${STI_SCRIPTS_PATH}" \
-      io.s2i.scripts-url="image://${STI_SCRIPTS_PATH}" \
-      com.redhat.component="s2i-core-container" \
-      name="ubi8/s2i-core" \
-      version="1" \
-      com.redhat.license_terms="https://www.redhat.com/en/about/red-hat-end-user-license-agreements#UBI"
+      io.k8s.display-name="ArkCase Base"
 
 LABEL ORG="ArkCase LLC"
 LABEL MAINTAINER="ArkCase Support <support@arkcase.com>"
@@ -125,96 +110,117 @@ LABEL VERSION="${VER}"
 
 ARG BASE_DIR="/app"
 ENV BASE_DIR="${BASE_DIR}"
+ENV TEMP_DIR="${BASE_DIR}/temp"
+ENV DATA_DIR="${BASE_DIR}/data"
+ENV CONF_DIR="${BASE_DIR}/conf"
+ENV LOGS_DIR="${BASE_DIR}/logs"
 
 ENV DEF_USER="default"
 ENV DEF_UID="1001"
 ENV DEF_GROUP="${DEF_USER}"
 ENV DEF_GID="${DEF_UID}"
 
-# This is the list of basic dependencies that all language container image can
-# consume.
-# Also setup the 'openshift' user that is used for the build execution and for the
-# application runtime execution.
-# TODO: Use better UID and GID values
+ENV CHARSET="UTF-8"
+ENV LANGUAGE="en_US:en"
+ENV LANG="en_US.${CHARSET}"
+ENV LC_ALL="${LANG}"
 
 RUN mkdir -p "${HOME}/.pki/nssdb" && \
+    echo "${LANG} ${CHARSET}" > /etc/locale.gen && \
+    echo "LANG=${LANG}" > /etc/default/locale && \
+    userdel --remove ubuntu && \
     chown -R "${DEF_UID}:${DEF_GID}" "${HOME}/.pki" && \
-    yum -y update && \
-    yum -y install --setopt=tsflags=nodocs \
-        authselect \
-        bsdtar \
-        crypto-policies-scripts \
+    apt-get update && \
+    apt-get -y dist-upgrade && \
+    apt-get -y install \
+        acl \
+        attr \
+        bash-completion \
+        bind9-utils \
+        curl \
+        dnsutils \
         findutils \
-        gettext \
-        glibc-langpack-en \
-        glibc-locale-source \
-        groff-base \
+        gettext-base \
+        inotify-tools \
         jq \
+        libpam-modules \
+        libpam-pwquality \
+        libpam-runtime \
+        libxml2-utils \
+        locales \
+        lsb-release \
         openssl \
-        python3-pyyaml \
+        python-is-python3 \
+        python3 \
         python3-pip \
-        rsync \
-        scl-utils \
+        python3-yaml \
         sudo \
         tar \
-        tzdata-java \
         unzip \
+        uuid-runtime \
         wget \
         xmlstarlet \
-        xz \
-    && \
-    yum -y clean all --enablerepo='*' && \
-    update-alternatives --set python /usr/bin/python3
+        xz-utils \
+        zip \
+      && \
+    apt-get clean
 
-# Copy extra files to the image.
-COPY ./core/root/ /
-
-# Reset permissions of modified directories and add default user
-RUN rpm-file-permissions && \
-    groupadd --system --gid "${DEF_GID}" "${DEF_GROUP}" && \
-    useradd --system --uid "${DEF_UID}" --gid "${DEF_GID}" --home-dir "${HOME}" --shell /sbin/nologin \
+# Reset permissions of modified directories and add default user. We remove the "tape"
+# and "floppy" groups because they can interfere with other stuff we're interested in.
+#
+# In that same vein, we remap the GID for sudo from 27 to 25
+RUN groupadd --gid "${DEF_GID}" "${DEF_GROUP}" && \
+    useradd --uid "${DEF_UID}" --gid "${DEF_GID}" --home-dir "${HOME}" --shell /sbin/nologin \
         --comment "Default Application User" "${DEF_USER}" && \
-    chown -R "${DEF_USER}:${DEF_GROUP}" ${APP_ROOT} && \
-    mkdir -p "${BASE_DIR}"
+    groupdel tape && \
+    groupdel floppy && \
+    groupmod --gid 25 sudo && \
+    mkdir -p "${HOME}/bin" "${APP_ROOT}/bin" && \
+    chown -R "${DEF_USER}:${DEF_GROUP}" "${APP_ROOT}" "${HOME}" && \
+    chmod -R u=rwX,g=rX,o=X "${APP_ROOT}" "${HOME}"
 
-COPY --chown=root:root scripts/ /usr/local/bin
-RUN chmod a+rX /usr/local/bin/*
-
+# Install gucci
 COPY --chown=root:root --chmod=0755 --from=gucci /gucci /usr/local/bin/gucci
 
+# Install step
+COPY --chown=root:root --chmod=0755 --from=step /step /usr/local/bin/
+
+# Define the ACM_GROUP
 ENV ACM_GROUP="${ACM_GROUP}"
 ENV ACM_GID="${ACM_GID}"
 RUN groupadd --gid "${ACM_GID}" "${ACM_GROUP}"
 
-# Install STEP
-COPY --chown=root:root --chmod=0755 --from=step /step /usr/local/bin/
-
-# Copy the STIG file so it can be consumed by the scanner
-RUN yum -y install scap-security-guide && \
-    cp -vf "/usr/share/xml/scap/ssg/content/ssg-rl8-ds.xml" "/ssg-ds.xml" && \
-    yum -y remove scap-security-guide && \
-    yum -y clean all
-
 # Add the acme-init stuff (only accessible by ACM_GROUP)
-COPY --chown=root:${ACM_GROUP} --chmod=0750 acme-init acme-validate expand-urls /usr/local/bin/
+COPY --chown=root:${ACM_GROUP} --chmod=0750 acme-init acme-validate expand-urls find-ssl-dirs /usr/local/bin/
 COPY --chown=root:root --chmod=0640 00-acme-init /etc/sudoers.d
 RUN sed -i -e "s;\${ACM_GROUP};${ACM_GROUP};g" /etc/sudoers.d/00-acme-init
+
+# Copy extra files to the image, and fix permissions for sensitive directories
+COPY ./core/root/ /
+
+COPY --chown=root:root scripts/ /usr/local/bin
+RUN chmod a+rX /usr/local/bin/*
 
 # Add the common-use functions
 COPY --chown=root:root --chmod=0444 functions /.functions
 
 # STIG Remediations
-RUN authselect select minimal --force
 COPY --chown=root:root stig/ /usr/share/stig/
 RUN cd /usr/share/stig && ./run-all
 
-# Enable FIPS
-RUN fips-mode-setup --enable
+# Enable FIPS (can't do this yet ... need to wait for Ubuntu Pro!)
+# RUN fips-mode-setup --enable
 
 ENV CURL_HOME="/etc/curl"
 COPY --chown=root:root --chmod=0644 curlrc "${CURL_HOME}/.curlrc"
 
-COPY --chown=root:root --chmod=0755 apply-fixes fix-jars /usr/local/bin/
+COPY --chown=root:root --chmod=0755 apply-fixes /usr/local/bin/
+
+RUN mkdir -p "${BASE_DIR}" "${CONF_DIR}" "${DATA_DIR}" "${LOGS_DIR}" "${TEMP_DIR}" && \
+    chmod -R ug=rwX,o= "${TEMP_DIR}"
+
+# FINAL STEP: ensure all sensitive directories are duly protected
+RUN secure-permissions
 
 # Directory with the sources is set as the working directory so all STI scripts
 # can execute relative to this path.
@@ -222,7 +228,3 @@ WORKDIR "${HOME}"
 
 ENTRYPOINT [ "container-entrypoint" ]
 CMD [ "base-usage" ]
-
-###########################################################################################################
-#   END: Base Image simliar to simliar to registry.access.redhat.com/ubi8/s2i-core:latest #################
-###########################################################################################################
