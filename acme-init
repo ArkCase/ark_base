@@ -292,9 +292,9 @@ is_valid_hostname "${ACME_HOST}" || fail "Malformed URL for the ACME CA: bad hos
 is_valid_port "${ACME_PORT}" || fail "The port in the URL must be between 1 and 65535"
 
 ACME_ROOT_CA_BASENAME="ca-root"
-ACME_ROOT_CA_ANCHOR="${OS_SSL_ANCHORS}/${ACME_ROOT_CA_BASENAME}.${OSS_SSL_SUFFIX}"
+ACME_ROOT_CA_ANCHOR="${OS_SSL_ANCHORS}/${ACME_ROOT_CA_BASENAME}.${OS_SSL_SUFFIX}"
 ACME_INT_CA_BASENAME="ca-int"
-ACME_INT_CA_ANCHOR="${OS_SSL_ANCHORS}/${ACME_INT_CA_BASENAME}.${OSS_SSL_SUFFIX}"
+ACME_INT_CA_ANCHOR="${OS_SSL_ANCHORS}/${ACME_INT_CA_BASENAME}.${OS_SSL_SUFFIX}"
 
 if as_boolean "${ACME_WAIT}" ; then
 	wait_for_marker "${ACME_WAIT_MARKER}" || fail "ACME client initialization timed out"
