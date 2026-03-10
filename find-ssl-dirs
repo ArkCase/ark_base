@@ -17,6 +17,7 @@ print_for_id()
 			OS_SSL_ANCHORS="/usr/local/share/ca-certificates"
 			OS_SSL_CACERTS="/etc/ssl/certs/java/cacerts"
 			OS_SSL_UPDATE_CMD=( /usr/sbin/update-ca-certificates --verbose --fresh )
+			OS_SSL_SUFFIX="crt"
 			;;
 
 		rocky | centos | rhel | fedora )
@@ -24,12 +25,13 @@ print_for_id()
 			OS_SSL_ANCHORS="${TRUSTS_HOME}/source/anchors"
 			OS_SSL_CACERTS="${TRUSTS_HOME}/extracted/java/cacerts"
 			OS_SSL_UPDATE_CMD=( /usr/bin/update-ca-trust extract )
+			OS_SSL_SUFFIX="pem"
 			;;
 
 		* ) return 1 ;;
 	esac
 
-	for VAR in OS_SSL_CACERTS OS_SSL_ANCHORS OS_SSL_UPDATE_CMD ; do
+	for VAR in OS_SSL_CACERTS OS_SSL_ANCHORS OS_SSL_UPDATE_CMD OS_SSL_SUFFIX ; do
 		declare -p "${VAR}"
 	done
 	return 0

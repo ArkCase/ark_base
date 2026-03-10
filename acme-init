@@ -125,7 +125,9 @@ is_ca()
 install_chain()
 {
 	local CERT_BASE_NAME="${1}"
+	local SUFFIX="${2}"
 	local DEST="$(readlink -f "$(mktemp -d)")"
+	local EXT="${SUFFIX:+.}${SUFFIX}"
 	( cd "${DEST}" && csplit /dev/stdin '/BEGIN CERTIFICATE/' '{*}' &>/dev/null ) || return $?
 	while read n ; do
 		# Leave only the certificate bits in each split out file
@@ -137,7 +139,7 @@ install_chain()
 			local ISSUER="$(openssl x509 -noout -issuer -in "${n}" | sed -e 's;^issuer=;;g')"
 			say "\tInstalling certificate: ${SUBJECT}"
 			[ "${SUBJECT}" != "${ISSUER}" ] && say "\tIssued by: ${ISSUER}"
-			local TGT_NAME="${CERT_BASE_NAME}.${n##*/}.pem"
+			local TGT_NAME="${CERT_BASE_NAME}.${n##*/}${EXT}"
 			mv -f "${n}" "${TGT_NAME}"
 		else
 			rm -f "${n}" &>/dev/null
@@ -153,6 +155,7 @@ download_from_port()
 	local PORT="${3}"
 	local PROTOCOL="${4}"
 	local TARGET="${5}"
+	local SUFFIX="${6}"
 
 	local SNI_FLAGS=()
 	[ -n "${SNI}" ] && SNI_FLAGS+=(-servername "${SNI}")
@@ -171,7 +174,7 @@ download_from_port()
 	openssl s_client -connect "${HOST}:${PORT}" \
 		"${SNI_FLAGS[@]}" "${TLS_FLAGS[@]}" \
 		-showcerts </dev/null 2>/dev/null | \
-			install_chain "${TARGET}/${CERT_BASE_NAME}"
+			install_chain "${TARGET}/${CERT_BASE_NAME}" "${SUFFIX}"
 	return 0
 }
 
@@ -179,8 +182,9 @@ download_chain()
 {
 	local CERT_BASE_NAME="${1}"
 	local URL="${2}"
+	local SUFFIX="${3}"
 	local RC=0
-	OUT="$(curl -kL --fail --silent --show-error --connect-timeout 5 -o >(install_chain "${CERT_BASE_NAME}") "${URL}" 2>&1)" || RC=${?}
+	OUT="$(curl -kL --fail --silent --show-error --connect-timeout 5 -o >(install_chain "${CERT_BASE_NAME}" "${SUFFIX}") "${URL}" 2>&1)" || RC=${?}
 	[ ${RC} -ne 0 ] && err "Failed to download the certificates from [${URL}] (rc=${RC}):\n${OUT}"
 	return ${RC}
 }
@@ -288,9 +292,9 @@ is_valid_hostname "${ACME_HOST}" || fail "Malformed URL for the ACME CA: bad hos
 is_valid_port "${ACME_PORT}" || fail "The port in the URL must be between 1 and 65535"
 
 ACME_ROOT_CA_BASENAME="ca-root"
-ACME_ROOT_CA_ANCHOR="${OS_SSL_ANCHORS}/${ACME_ROOT_CA_BASENAME}.crt"
+ACME_ROOT_CA_ANCHOR="${OS_SSL_ANCHORS}/${ACME_ROOT_CA_BASENAME}.${OSS_SSL_SUFFIX}"
 ACME_INT_CA_BASENAME="ca-int"
-ACME_INT_CA_ANCHOR="${OS_SSL_ANCHORS}/${ACME_INT_CA_BASENAME}.crt"
+ACME_INT_CA_ANCHOR="${OS_SSL_ANCHORS}/${ACME_INT_CA_BASENAME}.${OSS_SSL_SUFFIX}"
 
 if as_boolean "${ACME_WAIT}" ; then
 	wait_for_marker "${ACME_WAIT_MARKER}" || fail "ACME client initialization timed out"
@@ -362,9 +366,9 @@ while read cert ; do
 
 	case "${CERT,,}" in
 		# If the data is an actual certificate, copy it verbatim
-		*.pem )
+		*.pem | *.crt )
 			say "\tDeploying certificate [${CERT}]..."
-			install_chain "${OS_SSL_ANCHORS}/${CERT%.*}" < "${cert}"
+			install_chain "${OS_SSL_ANCHORS}/${CERT%.*}" "${OS_SSL_SUFFIX}" < "${cert}"
 			;;
 
 		# If the data is a URL, then try to pull it down and put the resulting file into
@@ -374,7 +378,7 @@ while read cert ; do
 			URL="$(expand_vars "${STR}" 2>&1)" || { warn "Failed to expand the environment variables contained in [${STR}] (rc=${?}): ${URL}" ; continue ; }
 			is_valid_url "${URL}" || fail "\tThe certificate [${CERT}] is invalid - the URL syntax is invalid: [${URL}]"
 			say "\tDownloading the certificate [${CERT}] from [${URL}]..."
-			download_chain "${OS_SSL_ANCHORS}/${CERT%.*}" "${URL}" || fail "\tFailed to download the certificate [${CERT}] from the URL [${URL}]"
+			download_chain "${OS_SSL_ANCHORS}/${CERT%.*}" "${URL}" "${OS_SSL_SUFFIX}" || fail "\tFailed to download the certificate [${CERT}] from the URL [${URL}]"
 			;;
 
 		*.ssl )
@@ -400,7 +404,7 @@ while read cert ; do
 				DESCRIPTION="TLS server [${SERVER}] (${TLS_PROTOCOL})"
 			fi
 			say "\tDownloading the certificate [${CERT}] from the ${DESCRIPTION} ..."
-			download_from_port "${HOST_NAME}" "${SERVER_NAME}" "${PORT}" "${TLS_PROTOCOL}" "${OS_SSL_ANCHORS}" || fail "\tFailed to download the certificate from the ${DESCRIPTION} as requested by [${CERT}]"
+			download_from_port "${HOST_NAME}" "${SERVER_NAME}" "${PORT}" "${TLS_PROTOCOL}" "${OS_SSL_ANCHORS}" "${OS_SSL_SUFFIX}" || fail "\tFailed to download the certificate from the ${DESCRIPTION} as requested by [${CERT}]"
 			;;
 
 		* )
