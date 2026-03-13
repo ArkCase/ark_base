@@ -263,6 +263,11 @@ KEYSTORE_GENERATED="false"
 KEYTOOL="false"
 type -P keytool &>/dev/null && KEYTOOL="true"
 
+fips_enabled && FIPS="only" || FIPS="off"
+set_or_default GODEBUG
+GODEBUG+="${GODEBUG:+,}fips140=${FIPS}"
+export GODEBUG
+
 if as_boolean "${KEYTOOL}" && fips_enabled && [ -v BC_PROV_JAR ] ; then
 	[ -n "${KT_PROVIDER}" ] || KT_PROVIDER="org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider"
 	[ -n "${KT_PROVIDER_PATH}" ] || KT_PROVIDER_PATH="${BC_PROV_JAR}"

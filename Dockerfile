@@ -45,6 +45,8 @@ ARG BUILDER_IMAGE="golang"
 ARG BUILDER_VER="${GO}-alpine"
 ARG BUILDER_IMG="${BUILDER_IMAGE}:${BUILDER_VER}"
 
+SHELL [ "bash", "-c" ]
+
 FROM "${BUILDER_IMG}" AS gucci
 
 ARG GO
@@ -182,7 +184,7 @@ RUN groupadd --gid "${DEF_GID}" "${DEF_GROUP}" && \
 COPY --chown=root:root --chmod=0755 --from=gucci /gucci /usr/local/bin/gucci
 
 # Install step
-COPY --chown=root:root --chmod=0755 --from=step /step /usr/local/bin/
+COPY --chown=root:root --chmod=0755 --from=step /step-fips /usr/local/bin/
 
 # Define the ACM_GROUP
 ENV ACM_GROUP="${ACM_GROUP}"
