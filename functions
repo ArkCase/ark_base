@@ -98,6 +98,24 @@ quit()
 }
 
 #
+# usage: trap on_err ERR
+#
+# Handle script errors and report the line they happened on
+#
+on_err()
+{
+	local RC=$? # save the exit code as the first thing done in the trap function
+	err "Script error"
+	echo -e "\tCOMMAND: [${BASH_COMMAND}]"
+	echo -e "\tEXIT CODE: ${RC}"
+	for (( N=1 ; N < ${#BASH_SOURCE[@]} ; N++ )) ; do
+		M=$(( N - 1 )) || true
+		echo -e "\t\tat ${BASH_SOURCE[${N}]@Q} @ ${BASH_LINENO[${M}]}"
+	done
+	exit ${RC}
+}
+
+#
 # usage: declare_base_vars
 #
 # Declares some base-use variables:
