@@ -182,7 +182,7 @@ RUN groupadd --gid "${DEF_GID}" "${DEF_GROUP}" && \
 COPY --chown=root:root --chmod=0755 --from=gucci /gucci /usr/local/bin/gucci
 
 # Install step
-COPY --chown=root:root --chmod=0755 --from=step /step-fips /usr/local/bin/step
+COPY --chown=root:root --chmod=0755 --from=step /step /usr/local/bin/
 
 # Define the ACM_GROUP
 ENV ACM_GROUP="${ACM_GROUP}"
