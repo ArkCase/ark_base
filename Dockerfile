@@ -45,8 +45,6 @@ ARG BUILDER_IMAGE="golang"
 ARG BUILDER_VER="${GO}-alpine"
 ARG BUILDER_IMG="${BUILDER_IMAGE}:${BUILDER_VER}"
 
-SHELL [ "bash", "-c" ]
-
 FROM "${BUILDER_IMG}" AS gucci
 
 ARG GO
