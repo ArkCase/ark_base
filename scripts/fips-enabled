@@ -3,16 +3,11 @@
 set -euo pipefail
 . /.functions
 
-# TODO: This is a temporary workaround until we get FIPS working properly
-fail "FIPS support is currently disabled by hardcode (this is temporary)"
-
-RC=0
-is_fips || RC=${?}
-
-case ${RC} in
-	0 ) ok "FIPS is enabled!" ; exit 0 ;;
-	2 ) fail "FIPS is not enabled: [${FLAG_FILE}] is not readable or does not exist" ;;
-	3 ) fail "FIPS is not enabled: failed to read the contents of [${FLAG_FILE}]" ;;
-	4 ) fail "FIPS is not enabled: the contents of [${FLAG_FILE}] did not match the expected contents" ;;
-	* ) fail "FIPS is not enabled" ;;
-esac
+# Simple test
+if is_fips ; then
+	ok "FIPS is enabled!"
+	exit 0
+else
+	err "FIPS is not enabled (rc=${?})"
+	exit 1
+fi
