@@ -4,7 +4,9 @@ on:
   push:
     branches:
       - main
+      - main-fips
       - develop
+      - develop-fips
 
 jobs:
   call-workflow-in-ecr-template:

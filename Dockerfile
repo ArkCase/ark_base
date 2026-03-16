@@ -24,14 +24,15 @@ ARG VER="24.04"
 ARG ARCH="x86_64"
 ARG OS="linux"
 ARG PKG="base"
-ARG PLATFORM="ubuntu-fips:${VER}"
+ARG FIPS=""
+ARG PLATFORM="ubuntu${FIPS}:${VER}"
 ARG ACM_GID="10000"
 ARG ACM_GROUP="acm"
 
-ARG BASE_REGISTRY="${PRIVATE_REGISTRY}"
-ARG BASE_REPO="arkcase/ubuntu-fips"
+ARG BASE_REGISTRY
+ARG BASE_REPO="${FIPS:+${PRIVATE_REGISTRY}/arkcase/}ubuntu${FIPS}"
 ARG BASE_VER="${VER}"
-ARG BASE_IMG="${BASE_REGISTRY}/${BASE_REPO}:${BASE_VER_PFX}${BASE_VER}"
+ARG BASE_IMG="${BASE_REPO}${FIPS}:${BASE_VER}"
 
 ARG STEP_REGISTRY="${PRIVATE_REGISTRY}"
 ARG STEP_REPO="arkcase/rebuild-step-ca"
@@ -80,6 +81,7 @@ ARG ARCH
 ARG OS
 ARG PKG
 ARG PLATFORM
+ARG FIPS
 ARG ACM_GROUP
 ARG ACM_GID
 
@@ -178,10 +180,10 @@ RUN groupadd --gid "${DEF_GID}" "${DEF_GROUP}" && \
     chmod -R u=rwX,g=rX,o=X "${APP_ROOT}" "${HOME}"
 
 # Install gucci
-COPY --chown=root:root --chmod=0755 --from=gucci /gucci /usr/local/bin/gucci
+COPY --chown=root:root --chmod=0755 --from=gucci "/gucci" "/usr/local/bin/gucci"
 
 # Install step
-COPY --chown=root:root --chmod=0755 --from=step /step /usr/local/bin/
+COPY --chown=root:root --chmod=0755 --from=step "/step${FIPS}" "/usr/local/bin/step"
 
 # Define the ACM_GROUP
 ENV ACM_GROUP="${ACM_GROUP}"
