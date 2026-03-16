@@ -19,12 +19,12 @@
 #
 ###########################################################################################################
 
+ARG FIPS=""
 ARG PRIVATE_REGISTRY
 ARG VER="24.04"
 ARG ARCH="x86_64"
 ARG OS="linux"
 ARG PKG="base"
-ARG FIPS=""
 ARG PLATFORM="ubuntu${FIPS}:${VER}"
 ARG ACM_GID="10000"
 ARG ACM_GROUP="acm"
