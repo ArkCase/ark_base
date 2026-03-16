@@ -266,19 +266,9 @@ type -P keytool &>/dev/null && KEYTOOL="true"
 #
 # Configure FIPS
 #
-FIPS="false"
-FIPS_MODE="off"
-fips-enabled && FIPS_MODE="only" && FIPS="true"
-declare -xr FIPS
+set_fips
 
-#
-# Propagate FIPS to the GoLang stuff
-#
-set_or_default GODEBUG
-GODEBUG+="${GODEBUG:+,}fips140=${FIPS_MODE}"
-export GODEBUG
-
-if as_boolean "${KEYTOOL}" && as_boolean "${FIPS}" && [ -v BC_PROV_JAR ] ; then
+if as_boolean "${KEYTOOL}" && is_fips && [ -v BC_PROV_JAR ] ; then
 	[ -n "${KT_PROVIDER}" ] || KT_PROVIDER="org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider"
 	[ -n "${KT_PROVIDER_PATH}" ] || KT_PROVIDER_PATH="${BC_PROV_JAR}"
 	[ -n "${KEYSTORE_TYPE}" ] || KEYSTORE_TYPE="BCPKCS12"
@@ -577,7 +567,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			&& say "\t✅ AES-256 (PKCS8) Encrypted key ready!" \
 			|| warn "Failed to create the AES-256 (PKCS8) Encrypted certificate key"
 
-		if ! as_boolean "${FIPS}" ; then
+		if ! is_fips ; then
 			doing "Creating an RSA encrypted version of the key..."
 			openssl rsa -aes256 \
 				-in "${SSL_DIR}/cert.key" \

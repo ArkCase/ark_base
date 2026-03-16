@@ -1457,17 +1457,17 @@ execute_unless()
 }
 
 #
-# usage: fips_enabled
+# usage: is_fips
 #
 # Check to see if FIPS is enabled, and return
 # a 0 status if it is, non-0 if it is not.
 #
-fips_enabled()
+is_fips()
 {
 	# Temporary: always return 1
 	return 1
 
-	[ -v FIPS_FLAG_FILE ] || FIPS_FLAG_FILE="/proc/sys/crypto/fips_enabled"
+	local FIPS_FLAG_FILE="/proc/sys/crypto/fips_enabled"
 
 	# If the flag file isn't there and readable, fail
 	is_file_readable "${FIPS_FLAG_FILE}" || return 2
@@ -1483,6 +1483,34 @@ fips_enabled()
 	[ ${FIPS_FLAG} -eq 1 ] || return 1
 
 	# The flag file is there and contains a non-0 number
+	return 0
+}
+
+#
+# usage: set_fips
+#
+# Define the value of the FIPS environment variable to
+# "true" if FIPS is enabled, or "false" otherwise. Also
+# sets the value of GODEBUG for fips140=only or fips140=off
+#
+set_fips()
+{
+	declare -xg FIPS="false"
+	local FIPS_MODE="off"
+
+	if is_fips ; then
+		ok "FIPS is enabled!"
+		FIPS="true"
+		FIPS_MODE="only"
+	else
+		err "FIPS is not enabled"
+	fi
+	declare -xr FIPS
+
+	# Configure any GoLang stuff
+	set_or_default GODEBUG
+	GODEBUG+="${GODEBUG:+,}fips140=${FIPS_MODE}"
+	declare -xg GODEBUG
 	return 0
 }
 

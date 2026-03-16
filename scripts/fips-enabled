@@ -6,12 +6,8 @@ set -euo pipefail
 # TODO: This is a temporary workaround until we get FIPS working properly
 fail "FIPS support is currently disabled by hardcode (this is temporary)"
 
-set_or_default FLAG_FILE "/proc/sys/crypto/fips_enabled"
-
-export FLAG_FILE
-
 RC=0
-fips_enabled || RC=${?}
+is_fips || RC=${?}
 
 case ${RC} in
 	0 ) ok "FIPS is enabled!" ; exit 0 ;;

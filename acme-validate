@@ -25,7 +25,7 @@ BASE_FILES=(
 	"${PWFILE}"
 )
 
-fips_enabled || BASE_FILES+=( "${SSL_DIR}/cert.key.rsa" )
+is_fips || BASE_FILES+=( "${SSL_DIR}/cert.key.rsa" )
 
 for f in "${BASE_FILES[@]}" ; do
 	is_file_readable "${f}"
@@ -36,7 +36,7 @@ done
 AES="$(openssl pkcs8 -in "${SSL_DIR}/cert.key.aes" -v2 aes-256-cbc -passin file:"${PWFILE}")" || fail "Failed to decrypt the AES-encrypted (PKCS8) private key"
 read PRIVATE rest < <(echo -n "${AES}" | openssl rsa -modulus -noout | sha256sum)
 
-if ! fips_enabled ; then
+if ! is_fips ; then
 	RSA="$(openssl rsa -in "${SSL_DIR}/cert.key.rsa" -passin file:"${PWFILE}" 2>/dev/null)" || fail "Failed to decrypt the RSA-encrypted private key"
 	read RSA_PRIVATE rest < <(echo -n "${RSA}" | openssl rsa -modulus -noout | sha256sum)
 

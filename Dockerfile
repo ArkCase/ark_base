@@ -24,15 +24,14 @@ ARG VER="24.04"
 ARG ARCH="x86_64"
 ARG OS="linux"
 ARG PKG="base"
-ARG PLATFORM="ubuntu:${VER}"
+ARG PLATFORM="ubuntu-fips:${VER}"
 ARG ACM_GID="10000"
 ARG ACM_GROUP="acm"
 
-# TODO: Swap the BASE_REGISTRY and BASE_REPO to the secure UBI
-# once we get Ubuntu Pro into the mix
-# ARG BASE_REGISTRY="docker.io"
-ARG BASE_REPO="docker.io/library/ubuntu"
-ARG BASE_IMG="${BASE_REPO}:${VER}"
+ARG BASE_REGISTRY="${PRIVATE_REGISTRY}"
+ARG BASE_REPO="arkcase/ubuntu-fips"
+ARG BASE_VER="${VER}"
+ARG BASE_IMG="${BASE_REGISTRY}/${BASE_REPO}:${BASE_VER_PFX}${BASE_VER}"
 
 ARG STEP_REGISTRY="${PRIVATE_REGISTRY}"
 ARG STEP_REPO="arkcase/rebuild-step-ca"
