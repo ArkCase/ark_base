@@ -1464,9 +1464,6 @@ execute_unless()
 #
 is_fips()
 {
-	# Temporary: always return 1
-	return 1
-
 	local FIPS_FLAG_FILE="/proc/sys/crypto/fips_enabled"
 
 	# If the flag file isn't there and readable, fail
