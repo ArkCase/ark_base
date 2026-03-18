@@ -195,7 +195,7 @@ add_global_trusts()
 	local KEYSTORE="${2}"
 	local PASSWORD="${3}"
 
-	to_boolean "${ACME_KEYSTORE_WITH_TRUSTS:-false}" || return 0
+	as_boolean "${ACME_KEYSTORE_WITH_TRUSTS:-true}" || return 0
 
 	doing "Adding the global trusts..."
 	# First off, add the trusts from the default CACERTS
@@ -216,7 +216,7 @@ expand_vars()
 	eval echo -n "${@}"
 }
 
-if "$(to_boolean "${ACME_DISABLE:-false}")" ; then
+if "$(as_boolean "${ACME_DISABLE:-false}")" ; then
 	ok "ACME Processing is disabled by configuration (ACME_DISABLE == ${ACME_DISABLE})"
 	exit 0
 fi
