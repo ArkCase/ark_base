@@ -216,7 +216,7 @@ expand_vars()
 	eval echo -n "${@}"
 }
 
-if "$(as_boolean "${ACME_DISABLE:-false}")" ; then
+if as_boolean "${ACME_DISABLE:-false}" ; then
 	ok "ACME Processing is disabled by configuration (ACME_DISABLE == ${ACME_DISABLE})"
 	exit 0
 fi
