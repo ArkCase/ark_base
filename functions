@@ -1302,8 +1302,12 @@ redirect_logs()
 __ssl()
 {
 	local OP="${1}"
+
+	# Enable/disable FIPS before we do any SSL stuff!
+	__set_fips
+
 	set_or_default SSL_DIR "/.ssl"
-	export SSL_DIR
+	declare -xg SSL_DIR
 	"/usr/local/bin/acme-${OP}"
 }
 
@@ -1314,7 +1318,15 @@ __ssl()
 #
 init_ssl()
 {
-	__ssl init
+	__ssl init || return ${?}
+
+	# Ok ... SSL is initialized ... means we have to export
+	# the password for downstream consumption!
+	set_or_default ACME_KEYSTORE_PASSWORD_FILE "${SSL_DIR}/keystore.pass"
+	require_file_readable "${ACME_KEYSTORE_PASSWORD_FILE}"
+	declare -xg JAVA_KEYSTORE_PASSWORD="$(<"${ACME_KEYSTORE_PASSWORD_FILE}")"
+
+	return 0
 }
 
 #
@@ -1492,6 +1504,11 @@ is_fips()
 #
 set_fips()
 {
+	# Do nothing ... merge into init_ssl
+}
+
+__set_fips()
+{
 	declare -xg FIPS="false"
 	local FIPS_MODE="off"
 
@@ -1511,6 +1528,12 @@ set_fips()
 			only | on | off ) FIPS_MODE="${GOLANG_FIPS140,,}" ;;
 		esac
 	fi
+
+	# Configure the Java Keystore type
+	local JKS="PKCS12"
+	as_boolean "${FIPS}" && JKS="BC${JKS}"
+	[ -v JAVA_KEYSTORE_TYPE ] && JKS="${JAVA_KEYSTORE_TYPE:-${JKS}}"
+	declare -xg JAVA_KEYSTORE_TYPE="${JKS}"
 
 	# Configure any GoLang stuff
 	set_or_default GODEBUG
