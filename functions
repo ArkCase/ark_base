@@ -1510,7 +1510,7 @@ set_fips()
 
 __set_fips()
 {
-	declare -xg FIPS="false"
+	local FIPS="false"
 	local FIPS_MODE="off"
 
 	if is_fips ; then
@@ -1520,7 +1520,6 @@ __set_fips()
 	else
 		err "FIPS is not available"
 	fi
-	declare -xr FIPS
 
 	# Allow for customizing the value set for GODEBUG
 	# for experimentation, but ignore invalid values
@@ -1561,6 +1560,9 @@ __set_fips()
 	# Add the value we're interested in
 	NEW+="${NEW:+,}${FLAG}=${FIPS_MODE}"
 	declare -xg GODEBUG="${NEW}"
+
+	# Finally
+	declare -xg FIPS="${FIPS}"
 	return 0
 }
 
