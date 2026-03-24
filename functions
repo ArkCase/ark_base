@@ -1505,6 +1505,7 @@ is_fips()
 set_fips()
 {
 	# Do nothing ... merge into init_ssl
+	return 0
 }
 
 __set_fips()
@@ -1530,10 +1531,18 @@ __set_fips()
 	fi
 
 	# Configure the Java Keystore type
-	local JKS="PKCS12"
-	as_boolean "${FIPS}" && JKS="BC${JKS}"
-	[ -v JAVA_KEYSTORE_TYPE ] && JKS="${JAVA_KEYSTORE_TYPE:-${JKS}}"
-	declare -xg JAVA_KEYSTORE_TYPE="${JKS}"
+	local JKS="${JAVA_KEYSTORE_TYPE:-"PKCS12"}"
+	local JKP="${JAVA_KEYSTORE_PROVIDER:-}"
+	local JKPP="${JAVA_KEYSTORE_PROVIDER_PATH:-}"
+	if as_boolean "${FIPS}" ; then
+		JKS="BCPKCS12"
+		JKP="org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider"
+		JKPP="${BC_PROV_JAR}"
+	fi
+
+	[ -n "${JKS}" ] && declare -xg JAVA_KEYSTORE_TYPE="${JKS}"
+	[ -n "${JKP}" ] && declare -xg JAVA_KEYSTORE_PROVIDER="${JKP}"
+	is_file_readable "${JKPP}" && declare -xg JAVA_KEYSTORE_PROVIDER_PATH="${JKPP}"
 
 	# Configure any GoLang stuff
 	set_or_default GODEBUG
