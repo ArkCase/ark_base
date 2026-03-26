@@ -1,0 +1,13 @@
+#!/bin/bash
+
+set -euo pipefail
+. /.functions
+
+#
+# Init all the SSL-related stuff
+#
+init_ssl
+
+set_or_default ENTRYPOINT "/usr/local/bin/entrypoint"
+require_file_executable "${ENTRYPOINT}"
+exec "${ENTRYPOINT}" "${@}"

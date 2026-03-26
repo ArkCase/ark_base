@@ -25,7 +25,9 @@ BASE_FILES=(
 	"${PWFILE}"
 )
 
-is_fips || BASE_FILES+=( "${SSL_DIR}/cert.key.rsa" )
+is_fips && FIPS="true" || FIPS="false"
+
+as_boolean "${FIPS}" || BASE_FILES+=( "${SSL_DIR}/cert.key.rsa" )
 
 for f in "${BASE_FILES[@]}" ; do
 	is_file_readable "${f}"
@@ -36,7 +38,7 @@ done
 AES="$(openssl pkcs8 -in "${SSL_DIR}/cert.key.aes" -v2 aes-256-cbc -passin file:"${PWFILE}")" || fail "Failed to decrypt the AES-encrypted (PKCS8) private key"
 read PRIVATE rest < <(echo -n "${AES}" | openssl rsa -modulus -noout | sha256sum)
 
-if ! is_fips ; then
+if ! as_boolean "${FIPS}" ; then
 	RSA="$(openssl rsa -in "${SSL_DIR}/cert.key.rsa" -passin file:"${PWFILE}" 2>/dev/null)" || fail "Failed to decrypt the RSA-encrypted private key"
 	read RSA_PRIVATE rest < <(echo -n "${RSA}" | openssl rsa -modulus -noout | sha256sum)
 
@@ -59,7 +61,7 @@ source <(echo -n "${SSL_DIRECTORIES}") || fail "Failed to apply the local SSL co
 
 for n in ca-int ca-root ; do
 	MASTER="${SSL_DIR}/${n}.pem"
-	ANCHOR="${OS_SSL_ANCHORS}/${n}.crt"
+	ANCHOR="${OS_SSL_ANCHORS}/${n}.${OSS_SSL_SUFFIX}"
 	[ -f "${MASTER}" ] || fail "The master certificate [${MASTER}] does not exist"
 	[ -f "${ANCHOR}" ] || fail "The anchor certificate [${ANCHOR}] does not exist"
 

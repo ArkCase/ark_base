@@ -6,6 +6,23 @@
 #
 
 #
+# If this has already been called, then we don't
+# repeat the work. To do a reload, simply run
+# "undef functions_loaded" to skip this step
+#
+declare -f functions_loaded &>/dev/null && return 0
+
+#
+# usage: functions_loaded
+#
+# Always returns a 0 status, can be used as a canary
+# to see if this file has been sourced
+functions_loaded()
+{
+	return 0
+}
+
+#
 # usage: timestamp
 #
 # Outputs the current system time in UTC, using ISO-8601
@@ -812,6 +829,54 @@ set_as_boolean()
 }
 
 #
+# usage: is_nonempty VAR
+#
+# Returns 0 if the variable is defined and has a non-empty
+# string as its value, and non-0 otherwise. If the variable
+# name is blank, or the wrong number of parameters is given,
+# then a non-0 value is returned.
+#
+is_nonempty()
+{
+	[ ${#} -eq 1 ] || return 1
+	local VAR="${1}"
+	[ -n "${VAR}" ] || return 2
+	[ -v "${VAR}" ] || return 3
+	[ -n "${!VAR}" ] || return 4
+	return 0
+}
+
+#
+# usage: is_all_nonempty VAR1 [ VAR2 VAR3 ... VARN ]
+#
+# Apply is_nonempty to each variable named. If any
+# invocation results in a non-0 status, then non-0
+# is returned. Otherwise, 0 is returned. If no
+# variable names are given, 0 is returned
+is_all_nonempty()
+{
+	for VAR in "${@}" ; do
+		is_nonempty "${VAR}" || return 1
+	done
+	return 0
+}
+
+#
+# usage: is_any_nonempty VAR1 [ VAR2 VAR3 ... VARN ]
+#
+# Apply is_nonempty to each variable named. If any
+# invocation results in a 0 status, then 0
+# is returned. Otherwise, non-0 is returned. If no
+# variable names are given, non-0 is returned
+is_any_nonempty()
+{
+	for VAR in "${@}" ; do
+		is_nonempty "${VAR}" && return 0
+	done
+	return 1
+}
+
+#
 # usage: require_exe EXE
 #
 # Checkes for the existence of the given executables. If an executable
@@ -1303,9 +1368,6 @@ __ssl()
 {
 	local OP="${1}"
 
-	# Enable/disable FIPS before we do any SSL stuff!
-	__set_fips
-
 	set_or_default SSL_DIR "/.ssl"
 	declare -xg SSL_DIR
 	"/usr/local/bin/acme-${OP}"
@@ -1320,13 +1382,10 @@ init_ssl()
 {
 	__ssl init || return ${?}
 
-	# Ok ... SSL is initialized ... means we have to export
-	# the password for downstream consumption!
-	set_or_default ACME_KEYSTORE_PASSWORD_FILE "${SSL_DIR}/keystore.pass"
-	require_file_readable "${ACME_KEYSTORE_PASSWORD_FILE}"
-	declare -xg JAVA_KEYSTORE_PASSWORD="$(<"${ACME_KEYSTORE_PASSWORD_FILE}")"
-
-	return 0
+	local RC=0
+	. "${SSL_DIR}/.env" || RC=${?}
+	[ ${RC} -eq 0 ] || err "Failed to load the SSL environment variables (rc=${RC})"
+	return ${RC}
 }
 
 #
@@ -1491,31 +1550,21 @@ is_fips()
 	# If the number from the flag file is not 1, fail
 	[ ${FIPS_FLAG} -eq 1 ] || return 1
 
-	# The flag file is there and contains a non-0 number
+	# The flag file is there and has the correct value
 	return 0
 }
 
 #
-# usage: set_fips
+# usage: set_godebug_fips140
 #
-# Define the value of the FIPS environment variable to
-# "true" if FIPS is enabled, or "false" otherwise. Also
-# sets the value of GODEBUG for fips140=only or fips140=off
+# Set the GODEBUG variable's FIPS140 value to the correct setting.
 #
-set_fips()
+set_godebug_fips140()
 {
-	# Do nothing ... merge into init_ssl
-	return 0
-}
-
-__set_fips()
-{
-	local FIPS="false"
 	local FIPS_MODE="off"
 
 	if is_fips ; then
 		ok "FIPS is available!"
-		FIPS="true"
 		FIPS_MODE="only"
 	else
 		err "FIPS is not available"
@@ -1524,30 +1573,17 @@ __set_fips()
 	# Allow for customizing the value set for GODEBUG
 	# for experimentation, but ignore invalid values
 	if [ -v GOLANG_FIPS140 ] ; then
-		case "${GOLANG_FIPS140,,}" in
-			only | on | off ) FIPS_MODE="${GOLANG_FIPS140,,}" ;;
+		FIPS_MODE="${GOLANG_FIPS140,,}"
+		case "${FIPS_MODE}" in
+			only | on | off ) ;;
+			* ) err "Unsupported FIPS mode for GoLang [${GOLANG_FIPS140}] - must be one of 'only', 'on', or 'off'" ; return 1 ;;
 		esac
 	fi
-
-	# Configure the Java Keystore type
-	local JKS="${JAVA_KEYSTORE_TYPE:-"PKCS12"}"
-	local JKP="${JAVA_KEYSTORE_PROVIDER:-}"
-	local JKPP="${JAVA_KEYSTORE_PROVIDER_PATH:-}"
-	if as_boolean "${FIPS}" ; then
-		JKS="BCPKCS12"
-		JKP="org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider"
-		JKPP="${BC_PROV_JAR}"
-	fi
-
-	[ -n "${JKS}" ] && declare -xg JAVA_KEYSTORE_TYPE="${JKS}"
-	[ -n "${JKP}" ] && declare -xg JAVA_KEYSTORE_PROVIDER="${JKP}"
-	is_file_readable "${JKPP}" && declare -xg JAVA_KEYSTORE_PROVIDER_PATH="${JKPP}"
 
 	# Configure any GoLang stuff
 	set_or_default GODEBUG
 	local FLAG="fips140"
 	local ARR=()
-
 	readarray -t ARR < <(echo -n "${GODEBUG}" | tr ',' '\n' | grep -Evi "^\s*${FLAG}=" | sed -e '/^\s*$/d')
 
 	# Start with a new value
@@ -1561,8 +1597,6 @@ __set_fips()
 	NEW+="${NEW:+,}${FLAG}=${FIPS_MODE}"
 	declare -xg GODEBUG="${NEW}"
 
-	# Finally
-	declare -xg FIPS="${FIPS}"
 	return 0
 }
 
@@ -1599,7 +1633,10 @@ get_cluster_domain()
 	[ -n "${NAMESPACE}" ] || return 0
 
 	# Let's see what we can do
-	hostname -f | sed -e "s;^.*\.${NAMESPACE}\.svc\.;;g"
+	local HN="$(hostname -f)"
+	local CLUSTER_DOMAIN=""
+	[[ "${HN}" =~ ^.*[.]${NAMESPACE}[.]svc[.](.*)$ ]] && echo -n "${BASH_REMATCH[1]}"
+	return 0
 }
 
 #
@@ -1635,3 +1672,5 @@ run_and_capture()
 		--arg RC "${RC}" '{ "stdout": $OUT, "stderr": $ERR, "status": ($RC | tonumber) }'
 	return ${RC}
 }
+
+as_boolean "${DEBUG_FUNCTIONS:-false}" && trap on_err ERR || true

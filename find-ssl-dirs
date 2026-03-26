@@ -16,7 +16,7 @@ print_for_id()
 		ubuntu | debian )
 			OS_SSL_ANCHORS="/usr/local/share/ca-certificates"
 			OS_SSL_CACERTS="/etc/ssl/certs/java/cacerts"
-			OS_SSL_UPDATE_CMD=( /usr/sbin/update-ca-certificates --verbose --fresh )
+			OS_SSL_UPDATE_CMD=( /usr/sbin/update-ca-certificates --fresh )
 			OS_SSL_SUFFIX="crt"
 			;;
 
