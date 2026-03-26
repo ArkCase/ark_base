@@ -3,6 +3,7 @@
 
 set -euo pipefail
 . /.functions
+export LOCK="$(readlink -f "${0}")"
 
 # Just for safety's sake
 cd /
@@ -227,624 +228,628 @@ set_or_default SSL_DIR "/.ssl"
 set_or_default SSL_ENV_FILE "${SSL_DIR}/.env"
 set_or_default SSL_TRUSTS_DIR "/.trusts"
 
-################################################################################
-#
-# If we've already computed all our stuff, 
-#
-################################################################################
-is_file_readable "${SSL_ENV_FILE}" && quit "SSL is already initialized, you can load the settings from [${SSL_ENV_FILE}]"
-
-#
-# Make sure the environment file is created every time if we exit cleanly
-#
-RESULT_OK="false"
-output_env()
 {
-	if as_boolean "${RESULT_OK}" ; then
-		local DIR="$(dirname "${SSL_ENV_FILE}")" 
-		mkdir -p "${DIR}"
+	flock -x 999 || fail "Failed to acquire the execution lock for SSL initialization"
 
-		# Output the variable values!
-		local UNDEF=()
-		{
-			echo "#!/bin/bash"
-			echo ""
-			echo "#"
-			echo "# Source this file to define all SSL-related environment variables"
-			echo "#"
-			echo ""
-			for VAR in "${SSL_ENV_FILE_VARS[@]}" ; do
-				if [ -v "${VAR}" ] ; then
-					echo "export ${VAR}=${!VAR@Q}"
-				else
-					UNDEF+=( "${VAR}" )
-					echo "# ${VAR} was undefined"
-				fi
-			done
-			echo ""
-			echo "#"
-			echo "# End of the SSL environment variable definitions"
-			echo "#"
-		} > "${SSL_ENV_FILE}"
-
-		[ ${#UNDEF[@]} -gt 0 ] && \
-			warn "The following variables were undefined [ ${UNDEF[@]} ]"
-
-		# Make sure everything is readable
-		chmod a+X "${DIR}"
-		chmod ugo=r "${SSL_ENV_FILE}"
-	fi
-}
-trap output_env EXIT
-
-#
-# Oh? Work to be done? Let's do some initial validations first ...
-#
-set_or_default ACM_GROUP
-[ -n "${ACM_GROUP}" ] || fail "The ACM_GROUP environment variable is REQUIRED"
-getent group "${ACM_GROUP}" &>/dev/null || fail "The group [${ACM_GROUP}] does not exist"
-
-SSL_DIRECTORIES="$(find-ssl-dirs)" || fail "Failed to compute the local SSL configuration"
-source <(echo -n "${SSL_DIRECTORIES}") || fail "Failed to apply the local SSL configuration"
-
-#
-# Find the Java keytool, if it's installed
-#
-KEYTOOL="false"
-type -P keytool &>/dev/null && KEYTOOL="true"
-
-#
-# These are the values we have to output into the environment
-# file at the end of processing
-#
-SSL_ENV_FILE_VARS=(
-	SSL_DIR
-	SSL_TRUSTS_DIR
-	SSL_ENV_FILE
-
-	FIPS
-	GODEBUG
-)
-
-################################################################################
-#
-# If we're doing the Java thing, then set up all the Java stuff
-#
-################################################################################
-if as_boolean "${KEYTOOL}" ; then
+	################################################################################
+	#
+	# If we've already computed all our stuff, 
+	#
+	################################################################################
+	is_file_readable "${SSL_ENV_FILE}" && quit "SSL is already initialized, you can load the settings from [${SSL_ENV_FILE}]"
 
 	#
-	# Define all the Java-related variables
+	# Make sure the environment file is created every time if we exit cleanly
 	#
-	export JAVA_KEYSTORE="${SSL_DIR}/keystore.pkcs12"
-	export JAVA_KEYSTORE_PASSWORD_FILE=""
-	export JAVA_KEYSTORE_TYPE="PKCS12"
-	export JAVA_KEYSTORE_PROVIDER=""
-	export JAVA_KEYSTORE_PROVIDER_PATH=""
-	export JAVA_KEYSTORE_PROVIDER_ARGS=""
+	RESULT_OK="false"
+	output_env()
+	{
+		if as_boolean "${RESULT_OK}" ; then
+			local DIR="$(dirname "${SSL_ENV_FILE}")" 
+			mkdir -p "${DIR}"
 
-	export JAVA_KEY_ALIAS="acme"
-	export JAVA_KEY_PASSWORD_FILE=""
-	export JAVA_KEY_PASSWORD=""
+			# Output the variable values!
+			local UNDEF=()
+			{
+				echo "#!/bin/bash"
+				echo ""
+				echo "#"
+				echo "# Source this file to define all SSL-related environment variables"
+				echo "#"
+				echo ""
+				for VAR in "${SSL_ENV_FILE_VARS[@]}" ; do
+					if [ -v "${VAR}" ] ; then
+						echo "export ${VAR}=${!VAR@Q}"
+					else
+						UNDEF+=( "${VAR}" )
+						echo "# ${VAR} was undefined"
+					fi
+				done
+				echo ""
+				echo "#"
+				echo "# End of the SSL environment variable definitions"
+				echo "#"
+			} > "${SSL_ENV_FILE}"
 
-	export JAVA_TRUSTSTORE="${JAVA_KEYSTORE}"
-	export JAVA_TRUSTSTORE_PASSWORD_FILE=""
-	export JAVA_TRUSTSTORE_TYPE="${JAVA_KEYSTORE_TYPE}"
-	export JAVA_TRUSTSTORE_PROVIDER=""
-	export JAVA_TRUSTSTORE_PROVIDER_PATH=""
-	export JAVA_TRUSTSTORE_PROVIDER_ARGS=""
+			[ ${#UNDEF[@]} -gt 0 ] && \
+				warn "The following variables were undefined [ ${UNDEF[@]} ]"
 
-	export JAVA_GLOBAL_TRUSTSTORE="${OS_SSL_CACERTS}"
-	export JAVA_GLOBAL_TRUSTSTORE_TYPE="JKS"
-	export JAVA_GLOBAL_TRUSTSTORE_PASSWORD="changeit"
+			# Make sure everything is readable
+			chmod a+X "${DIR}"
+			chmod ugo=r "${SSL_ENV_FILE}"
+		fi
+	}
+	trap output_env EXIT
 
-	JAVAX_NET_SSL_OPTS=(
-		-Djavax.net.ssl.keyStore='${JAVA_KEYSTORE}'
-		-Djavax.net.ssl.keyStorePasswordFile='${JAVA_KEYSTORE_PASSWORD_FILE}'
-		-Djavax.net.ssl.keyStorePassword='${JAVA_KEYSTORE_PASSWORD}'
-		-Djavax.net.ssl.keyStoreType='${JAVA_KEYSTORE_TYPE}'
-		-Djavax.net.ssl.keyStoreProvider='${JAVA_KEYSTORE_PROVIDER}'
+	#
+	# Oh? Work to be done? Let's do some initial validations first ...
+	#
+	set_or_default ACM_GROUP
+	[ -n "${ACM_GROUP}" ] || fail "The ACM_GROUP environment variable is REQUIRED"
+	getent group "${ACM_GROUP}" &>/dev/null || fail "The group [${ACM_GROUP}] does not exist"
 
-		-Djavax.net.ssl.keyAlias='${JAVA_KEY_ALIAS}'
-		-Djavax.net.ssl.keyPasswordFile='${JAVA_KEY_PASSWORD_FILE}'
-		-Djavax.net.ssl.keyPassword='${JAVA_KEY_PASSWORD}'
+	SSL_DIRECTORIES="$(find-ssl-dirs)" || fail "Failed to compute the local SSL configuration"
+	source <(echo -n "${SSL_DIRECTORIES}") || fail "Failed to apply the local SSL configuration"
 
-		-Djavax.net.ssl.trustStore='${JAVA_TRUSTSTORE}'
-		-Djavax.net.ssl.trustStorePasswordFile='${JAVA_TRUSTSTORE_PASSWORD_FILE}'
-		-Djavax.net.ssl.trustStorePassword='${JAVA_TRUSTSTORE_PASSWORD}'
-		-Djavax.net.ssl.trustStoreType='${JAVA_TRUSTSTORE_TYPE}'
-		-Djavax.net.ssl.trustStoreProvider='${JAVA_TRUSTSTORE_PROVIDER}'
+	#
+	# Find the Java keytool, if it's installed
+	#
+	KEYTOOL="false"
+	type -P keytool &>/dev/null && KEYTOOL="true"
+
+	#
+	# These are the values we have to output into the environment
+	# file at the end of processing
+	#
+	SSL_ENV_FILE_VARS=(
+		SSL_DIR
+		SSL_TRUSTS_DIR
+		SSL_ENV_FILE
+
+		FIPS
+		GODEBUG
 	)
-fi
 
-################################################################################
-#
-# Apply any FIPS-related adjustments
-#
-################################################################################
-export FIPS="false"
-if is_fips ; then
-	FIPS="true"
-
-	set_godebug_fips140
-
+	################################################################################
 	#
-	# Apply the FIPS adjustments
+	# If we're doing the Java thing, then set up all the Java stuff
 	#
+	################################################################################
 	if as_boolean "${KEYTOOL}" ; then
 
-		set_or_default JAVA_FIPS_KEYSTORE_TYPE "BCPKS12"
-		set_or_default JAVA_FIPS_KEYSTORE_PROVIDER "org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider"
-		set_or_default JAVA_FIPS_KEYSTORE_PROVIDER_PATH "${BC_PROV_JAR:-}"
-		set_or_default JAVA_FIPS_KEYSTORE_PROVIDER_ARGS
+		#
+		# Define all the Java-related variables
+		#
+		export JAVA_KEYSTORE="${SSL_DIR}/keystore.pkcs12"
+		export JAVA_KEYSTORE_PASSWORD_FILE=""
+		export JAVA_KEYSTORE_TYPE="PKCS12"
+		export JAVA_KEYSTORE_PROVIDER=""
+		export JAVA_KEYSTORE_PROVIDER_PATH=""
+		export JAVA_KEYSTORE_PROVIDER_ARGS=""
 
-		#
-		# The keystore is now FIPS-capable
-		#
-		JAVA_KEYSTORE_TYPE="${JAVA_FIPS_KEYSTORE_TYPE}"
-		JAVA_KEYSTORE_PROVIDER="${JAVA_FIPS_KEYSTORE_PROVIDER}"
-		JAVA_KEYSTORE_PROVIDER_PATH="${JAVA_FIPS_KEYSTORE_PROVIDER_PATH}"
-		JAVA_KEYSTORE_PROVIDER_ARGS="${JAVA_FIPS_KEYSTORE_PROVIDER_ARGS}"
+		export JAVA_KEY_ALIAS="acme"
+		export JAVA_KEY_PASSWORD_FILE=""
+		export JAVA_KEY_PASSWORD=""
 
-		#
-		# The FIPS keystore becomes the truststore
-		#
-		JAVA_TRUSTSTORE_TYPE="${JAVA_KEYSTORE_TYPE}"
-		JAVA_TRUSTSTORE_PROVIDER="${JAVA_KEYSTORE_PROVIDER}"
-		JAVA_TRUSTSTORE_PROVIDER_PATH="${JAVA_KEYSTORE_PROVIDER_PATH}"
-		JAVA_TRUSTSTORE_PROVIDER_ARGS="${JAVA_KEYSTORE_PROVIDER_ARGS}"
+		export JAVA_TRUSTSTORE="${JAVA_KEYSTORE}"
+		export JAVA_TRUSTSTORE_PASSWORD_FILE=""
+		export JAVA_TRUSTSTORE_TYPE="${JAVA_KEYSTORE_TYPE}"
+		export JAVA_TRUSTSTORE_PROVIDER=""
+		export JAVA_TRUSTSTORE_PROVIDER_PATH=""
+		export JAVA_TRUSTSTORE_PROVIDER_ARGS=""
 
-		JAVAX_NET_SSL_OPTS+=(
-			-Dssl.KeyManagerFactory.algorithm="PKIX"
-			-Dssl.TrustManagerFactory.algorithm="PKIX"
+		export JAVA_GLOBAL_TRUSTSTORE="${OS_SSL_CACERTS}"
+		export JAVA_GLOBAL_TRUSTSTORE_TYPE="JKS"
+		export JAVA_GLOBAL_TRUSTSTORE_PASSWORD="changeit"
+
+		JAVAX_NET_SSL_OPTS=(
+			-Djavax.net.ssl.keyStore='${JAVA_KEYSTORE}'
+			-Djavax.net.ssl.keyStorePasswordFile='${JAVA_KEYSTORE_PASSWORD_FILE}'
+			-Djavax.net.ssl.keyStorePassword='${JAVA_KEYSTORE_PASSWORD}'
+			-Djavax.net.ssl.keyStoreType='${JAVA_KEYSTORE_TYPE}'
+			-Djavax.net.ssl.keyStoreProvider='${JAVA_KEYSTORE_PROVIDER}'
+
+			-Djavax.net.ssl.keyAlias='${JAVA_KEY_ALIAS}'
+			-Djavax.net.ssl.keyPasswordFile='${JAVA_KEY_PASSWORD_FILE}'
+			-Djavax.net.ssl.keyPassword='${JAVA_KEY_PASSWORD}'
+
+			-Djavax.net.ssl.trustStore='${JAVA_TRUSTSTORE}'
+			-Djavax.net.ssl.trustStorePasswordFile='${JAVA_TRUSTSTORE_PASSWORD_FILE}'
+			-Djavax.net.ssl.trustStorePassword='${JAVA_TRUSTSTORE_PASSWORD}'
+			-Djavax.net.ssl.trustStoreType='${JAVA_TRUSTSTORE_TYPE}'
+			-Djavax.net.ssl.trustStoreProvider='${JAVA_TRUSTSTORE_PROVIDER}'
 		)
 	fi
-fi
 
-#
-# Configure any GoLang stuff
-#
-set_godebug_fips140
+	################################################################################
+	#
+	# Apply any FIPS-related adjustments
+	#
+	################################################################################
+	export FIPS="false"
+	if is_fips ; then
+		FIPS="true"
 
-################################################################################
-#
-# Ok ... start doing the work!
-#
-################################################################################
-set_or_default ACME_WAIT "false"
-if as_boolean "${ACME_WAIT}" ; then
-	set_or_default ACME_WAIT_TIMEOUT "20m"
-	wait_for_marker "${SSL_ENV_FILE}" "${ACME_WAIT_TIMEOUT}" || fail "ACME client initialization timed out"
-	quit "ACME rendering is complete, you can load the necessary variables from [${SSL_ENV_FILE}]"
-fi
+		set_godebug_fips140
 
-set_or_default ACME_URL "https://acme:9000"
-# Validate the URL
-[[ "${ACME_URL}" =~ ^http(s)?://([^:/]+)(:([1-9][0-9]*))?(/.*)?$ ]] || fail "Malformed URL for the ACME CA: [${ACME_URL}]"
+		#
+		# Apply the FIPS adjustments
+		#
+		if as_boolean "${KEYTOOL}" ; then
 
-ACME_HOST="${BASH_REMATCH[2]}"
-ACME_PORT="80"
-[ -z "${BASH_REMATCH[1]}" ] || ACME_PORT="443"
-[ -z "${BASH_REMATCH[4]}" ] || ACME_PORT="${BASH_REMATCH[4]}"
+			set_or_default JAVA_FIPS_KEYSTORE_TYPE "BCPKS12"
+			set_or_default JAVA_FIPS_KEYSTORE_PROVIDER "org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider"
+			set_or_default JAVA_FIPS_KEYSTORE_PROVIDER_PATH "${BC_PROV_JAR:-}"
+			set_or_default JAVA_FIPS_KEYSTORE_PROVIDER_ARGS
 
-# Validate the values captured above ... must have a valid host and port
-is_valid_hostname "${ACME_HOST}" || fail "Malformed URL for the ACME CA: bad hostname [${ACME_URL}]"
-is_valid_port "${ACME_PORT}" || fail "The port in the URL must be between 1 and 65535"
+			#
+			# The keystore is now FIPS-capable
+			#
+			JAVA_KEYSTORE_TYPE="${JAVA_FIPS_KEYSTORE_TYPE}"
+			JAVA_KEYSTORE_PROVIDER="${JAVA_FIPS_KEYSTORE_PROVIDER}"
+			JAVA_KEYSTORE_PROVIDER_PATH="${JAVA_FIPS_KEYSTORE_PROVIDER_PATH}"
+			JAVA_KEYSTORE_PROVIDER_ARGS="${JAVA_FIPS_KEYSTORE_PROVIDER_ARGS}"
 
-ACME_ROOT_CA_BASENAME="ca-root"
-ACME_ROOT_CA_ANCHOR="${OS_SSL_ANCHORS}/${ACME_ROOT_CA_BASENAME}.${OS_SSL_SUFFIX}"
-ACME_INT_CA_BASENAME="ca-int"
-ACME_INT_CA_ANCHOR="${OS_SSL_ANCHORS}/${ACME_INT_CA_BASENAME}.${OS_SSL_SUFFIX}"
+			#
+			# The FIPS keystore becomes the truststore
+			#
+			JAVA_TRUSTSTORE_TYPE="${JAVA_KEYSTORE_TYPE}"
+			JAVA_TRUSTSTORE_PROVIDER="${JAVA_KEYSTORE_PROVIDER}"
+			JAVA_TRUSTSTORE_PROVIDER_PATH="${JAVA_KEYSTORE_PROVIDER_PATH}"
+			JAVA_TRUSTSTORE_PROVIDER_ARGS="${JAVA_KEYSTORE_PROVIDER_ARGS}"
 
-#
-# Ok ... start working our magic!
-#
+			JAVAX_NET_SSL_OPTS+=(
+				-Dssl.KeyManagerFactory.algorithm="PKIX"
+				-Dssl.TrustManagerFactory.algorithm="PKIX"
+			)
+		fi
+	fi
 
-################################################################################
-#
-# Download the root CA we'll use to trust everything from this cluster
-#
-################################################################################
+	#
+	# Configure any GoLang stuff
+	#
+	set_godebug_fips140
 
-# Wait up to 5 minutes for the CA to come up
-MAX_WAIT=300
-START="$(date +%s)"
-doing "Fetching the root CA certificate from [${ACME_HOST}]"
-while true ; do
+	################################################################################
+	#
+	# Ok ... start doing the work!
+	#
+	################################################################################
+	set_or_default ACME_WAIT "false"
+	if as_boolean "${ACME_WAIT}" ; then
+		set_or_default ACME_WAIT_TIMEOUT "20m"
+		wait_for_marker "${SSL_ENV_FILE}" "${ACME_WAIT_TIMEOUT}" || fail "ACME client initialization timed out"
+		quit "ACME rendering is complete, you can load the necessary variables from [${SSL_ENV_FILE}]"
+	fi
+
+	set_or_default ACME_URL "https://acme:9000"
+	# Validate the URL
+	[[ "${ACME_URL}" =~ ^http(s)?://([^:/]+)(:([1-9][0-9]*))?(/.*)?$ ]] || fail "Malformed URL for the ACME CA: [${ACME_URL}]"
+
+	ACME_HOST="${BASH_REMATCH[2]}"
+	ACME_PORT="80"
+	[ -z "${BASH_REMATCH[1]}" ] || ACME_PORT="443"
+	[ -z "${BASH_REMATCH[4]}" ] || ACME_PORT="${BASH_REMATCH[4]}"
+
+	# Validate the values captured above ... must have a valid host and port
+	is_valid_hostname "${ACME_HOST}" || fail "Malformed URL for the ACME CA: bad hostname [${ACME_URL}]"
+	is_valid_port "${ACME_PORT}" || fail "The port in the URL must be between 1 and 65535"
+
+	ACME_ROOT_CA_BASENAME="ca-root"
+	ACME_ROOT_CA_ANCHOR="${OS_SSL_ANCHORS}/${ACME_ROOT_CA_BASENAME}.${OS_SSL_SUFFIX}"
+	ACME_INT_CA_BASENAME="ca-int"
+	ACME_INT_CA_ANCHOR="${OS_SSL_ANCHORS}/${ACME_INT_CA_BASENAME}.${OS_SSL_SUFFIX}"
+
+	#
+	# Ok ... start working our magic!
+	#
+
+	################################################################################
+	#
+	# Download the root CA we'll use to trust everything from this cluster
+	#
+	################################################################################
+
+	# Wait up to 5 minutes for the CA to come up
+	MAX_WAIT=300
+	START="$(date +%s)"
+	doing "Fetching the root CA certificate from [${ACME_HOST}]"
+	while true ; do
+		# TODO: What's the standard way to do this in ACME-land?
+		OUT="$(curl -k -fsSL -o "${ACME_ROOT_CA_ANCHOR}" "${ACME_URL}/roots.pem" 2>&1)" && break
+		err "Failed to get the step root CA (rc=${?}):\n${OUT}"
+		NOW="$(date +%s)"
+		[ $(( NOW - START )) -ge ${MAX_WAIT} ] && fail "Timed out trying to reach the CA issuer at [${ACME_URL}]"
+		sleep 5 || fail "Sleep interrupted trying to wait for [${ACME_URL}] - cannot continue"
+	done
+	say "\t✅ Fetch OK!"
+
+	# Fetch the intermediate CA as well
 	# TODO: What's the standard way to do this in ACME-land?
-	OUT="$(curl -k -fsSL -o "${ACME_ROOT_CA_ANCHOR}" "${ACME_URL}/roots.pem" 2>&1)" && break
-	err "Failed to get the step root CA (rc=${?}):\n${OUT}"
-	NOW="$(date +%s)"
-	[ $(( NOW - START )) -ge ${MAX_WAIT} ] && fail "Timed out trying to reach the CA issuer at [${ACME_URL}]"
-	sleep 5 || fail "Sleep interrupted trying to wait for [${ACME_URL}] - cannot continue"
-done
-say "\t✅ Fetch OK!"
+	doing "Fetching the intermediate CA certificate from [${ACME_HOST}]"
+	(
+		set -euo pipefail
+		D="$(mktemp -d)"
+		cd "${D}"
+		INT_FILE="xx02"
+		csplit <(openssl s_client -connect "${ACME_HOST}:${ACME_PORT}" -showcerts </dev/null 2>/dev/null) \
+			'/BEGIN CERTIFICATE/' '{*}' &>/dev/null
+		sed -i -e '/^-\+END CERTIFICATE-\+$/q' "${INT_FILE}"
+		mv -f "${INT_FILE}" "${ACME_INT_CA_ANCHOR}"
+		cd /
+		rm -rf "${D}" || true
+	) || fail "Failed to fetch the intermediate CA from [${ACME_URL}]"
+	say "\t✅ Fetch OK!"
 
-# Fetch the intermediate CA as well
-# TODO: What's the standard way to do this in ACME-land?
-doing "Fetching the intermediate CA certificate from [${ACME_HOST}]"
-(
-	set -euo pipefail
-	D="$(mktemp -d)"
-	cd "${D}"
-	INT_FILE="xx02"
-	csplit <(openssl s_client -connect "${ACME_HOST}:${ACME_PORT}" -showcerts </dev/null 2>/dev/null) \
-		'/BEGIN CERTIFICATE/' '{*}' &>/dev/null
-	sed -i -e '/^-\+END CERTIFICATE-\+$/q' "${INT_FILE}"
-	mv -f "${INT_FILE}" "${ACME_INT_CA_ANCHOR}"
-	cd /
-	rm -rf "${D}" || true
-) || fail "Failed to fetch the intermediate CA from [${ACME_URL}]"
-say "\t✅ Fetch OK!"
+	################################################################################
+	#
+	# Trust the certificates we're told to trust
+	#
+	################################################################################
+	doing "Deploying the common trusted certificates from [${SSL_TRUSTS_DIR}]"
+	is_dir_writable "${SSL_TRUSTS_DIR}" || mkdir -p "${SSL_TRUSTS_DIR}"
+	SSL_TRUSTS_DIR="$(readlink -f "${SSL_TRUSTS_DIR}")"
 
-################################################################################
-#
-# Trust the certificates we're told to trust
-#
-################################################################################
-doing "Deploying the common trusted certificates from [${SSL_TRUSTS_DIR}]"
-is_dir_writable "${SSL_TRUSTS_DIR}" || mkdir -p "${SSL_TRUSTS_DIR}"
-SSL_TRUSTS_DIR="$(readlink -f "${SSL_TRUSTS_DIR}")"
-
-COUNT=0
-while read cert ; do
-	CERT="${cert##*/}"
-	if [ ! -f "${cert}" ] ; then
-		say "\tWARNING: The certificate [${CERT}] is not a regular file, skipping"
-		continue
-	fi
-
-	case "${CERT,,}" in
-		# If the data is an actual certificate, copy it verbatim
-		*.pem | *.crt )
-			say "\tDeploying certificate [${CERT}]..."
-			install_chain "${OS_SSL_ANCHORS}/${CERT%.*}" "${OS_SSL_SUFFIX}" < "${cert}"
-			;;
-
-		# If the data is a URL, then try to pull it down and put the resulting file into
-		# the correct location using ${CERT} as the name
-		*.url )
-			STR="$(<"${cert}")"
-			URL="$(expand_vars "${STR}" 2>&1)" || { warn "Failed to expand the environment variables contained in [${STR}] (rc=${?}): ${URL}" ; continue ; }
-			is_valid_url "${URL}" || fail "\tThe certificate [${CERT}] is invalid - the URL syntax is invalid: [${URL}]"
-			say "\tDownloading the certificate [${CERT}] from [${URL}]..."
-			download_chain "${OS_SSL_ANCHORS}/${CERT%.*}" "${URL}" "${OS_SSL_SUFFIX}" || fail "\tFailed to download the certificate [${CERT}] from the URL [${URL}]"
-			;;
-
-		*.ssl )
-			STR="$(<"${cert}")"
-			SERVER="$(expand_vars "${STR}" 2>&1)" || { warn "Failed to expand the environment variables contained in [${STR}] (rc=${?}): ${SERVER}" ; continue ; }
-			[[ "${SERVER}" =~ ^(([^@]+)@)?(([^:]+):([0-9]+))(/(.*))?$ ]] || fail "\tThe certificate [${CERT}] is invalid - the server string [${SERVER}] did not match the required pattern ([serverName@]hostNameOrIP:port[/tls-protocol])"
-			SERVER_NAME="${BASH_REMATCH[2]}"
-			HOST_NAME="${BASH_REMATCH[4]}"
-			PORT="${BASH_REMATCH[5]}"
-			TLS_PROTOCOL_STR="${BASH_REMATCH[6]}"
-			TLS_PROTOCOL="${BASH_REMATCH[7],,}"
-			if [ -n "${SERVER_NAME}" ] ; then
-				is_valid_hostname "${SERVER_NAME}" || fail "\tInvalid server name [${SERVER_NAME}] in spec [${SERVER}] from [${CERT}]"
-			fi
-			is_valid_hostname "${HOST_NAME}" || fail "\tInvalid host name [${HOST_NAME}] in spec: [${SERVER}] from [${CERT}]"
-			is_valid_port "${PORT}" || fail "\tInvalid port number [${PORT}] in spec: [${SERVER}] from [${CERT}]"
-			DESCRIPTION="SSL server [${SERVER}]"
-			if [ -n "${TLS_PROTOCOL_STR}" ] ; then
-				case "${TLS_PROTOCOL}" in
-					ftp | imap | irc | ldap | lmtp | mysql | nntp | pop3 | postgres | sieve | smtp | xmpp | xmpp-server ) ;;
-					* ) fail "\tUnsupported TLS protocol [${TLS_PROTOCOL}]" ;;
-				esac
-				DESCRIPTION="TLS server [${SERVER}] (${TLS_PROTOCOL})"
-			fi
-			say "\tDownloading the certificate [${CERT}] from the ${DESCRIPTION} ..."
-			download_from_port "${HOST_NAME}" "${SERVER_NAME}" "${PORT}" "${TLS_PROTOCOL}" "${OS_SSL_ANCHORS}" "${OS_SSL_SUFFIX}" || fail "\tFailed to download the certificate from the ${DESCRIPTION} as requested by [${CERT}]"
-			;;
-
-		* )
-			say "\tWARNING: Don't know how to handle certificate [${CERT}], skipping"
+	COUNT=0
+	while read cert ; do
+		CERT="${cert##*/}"
+		if [ ! -f "${cert}" ] ; then
+			say "\tWARNING: The certificate [${CERT}] is not a regular file, skipping"
 			continue
-			;;
-	esac
+		fi
 
-	(( ++COUNT ))
-done < <(find "${SSL_TRUSTS_DIR}" -mindepth 1 -maxdepth 1 -name "ssl-trust-*.*" | sort)
-if [ ${COUNT} -eq 0 ] ; then
-	say "\t✅ No certificates to deploy."
-else
-	say "\t✅ Deployed ${COUNT} certificates!"
-fi
+		case "${CERT,,}" in
+			# If the data is an actual certificate, copy it verbatim
+			*.pem | *.crt )
+				say "\tDeploying certificate [${CERT}]..."
+				install_chain "${OS_SSL_ANCHORS}/${CERT%.*}" "${OS_SSL_SUFFIX}" < "${cert}"
+				;;
 
-################################################################################
-#
-# Download our new certificates from the ACME instance
-#
-################################################################################
-set_or_default ACME_PASSWORD_FILE "/.acme.password"
-set_as_boolean KEYSTORE_GENERATED "false"
-if [ -f "${ACME_PASSWORD_FILE}" ] ; then
+			# If the data is a URL, then try to pull it down and put the resulting file into
+			# the correct location using ${CERT} as the name
+			*.url )
+				STR="$(<"${cert}")"
+				URL="$(expand_vars "${STR}" 2>&1)" || { warn "Failed to expand the environment variables contained in [${STR}] (rc=${?}): ${URL}" ; continue ; }
+				is_valid_url "${URL}" || fail "\tThe certificate [${CERT}] is invalid - the URL syntax is invalid: [${URL}]"
+				say "\tDownloading the certificate [${CERT}] from [${URL}]..."
+				download_chain "${OS_SSL_ANCHORS}/${CERT%.*}" "${URL}" "${OS_SSL_SUFFIX}" || fail "\tFailed to download the certificate [${CERT}] from the URL [${URL}]"
+				;;
+
+			*.ssl )
+				STR="$(<"${cert}")"
+				SERVER="$(expand_vars "${STR}" 2>&1)" || { warn "Failed to expand the environment variables contained in [${STR}] (rc=${?}): ${SERVER}" ; continue ; }
+				[[ "${SERVER}" =~ ^(([^@]+)@)?(([^:]+):([0-9]+))(/(.*))?$ ]] || fail "\tThe certificate [${CERT}] is invalid - the server string [${SERVER}] did not match the required pattern ([serverName@]hostNameOrIP:port[/tls-protocol])"
+				SERVER_NAME="${BASH_REMATCH[2]}"
+				HOST_NAME="${BASH_REMATCH[4]}"
+				PORT="${BASH_REMATCH[5]}"
+				TLS_PROTOCOL_STR="${BASH_REMATCH[6]}"
+				TLS_PROTOCOL="${BASH_REMATCH[7],,}"
+				if [ -n "${SERVER_NAME}" ] ; then
+					is_valid_hostname "${SERVER_NAME}" || fail "\tInvalid server name [${SERVER_NAME}] in spec [${SERVER}] from [${CERT}]"
+				fi
+				is_valid_hostname "${HOST_NAME}" || fail "\tInvalid host name [${HOST_NAME}] in spec: [${SERVER}] from [${CERT}]"
+				is_valid_port "${PORT}" || fail "\tInvalid port number [${PORT}] in spec: [${SERVER}] from [${CERT}]"
+				DESCRIPTION="SSL server [${SERVER}]"
+				if [ -n "${TLS_PROTOCOL_STR}" ] ; then
+					case "${TLS_PROTOCOL}" in
+						ftp | imap | irc | ldap | lmtp | mysql | nntp | pop3 | postgres | sieve | smtp | xmpp | xmpp-server ) ;;
+						* ) fail "\tUnsupported TLS protocol [${TLS_PROTOCOL}]" ;;
+					esac
+					DESCRIPTION="TLS server [${SERVER}] (${TLS_PROTOCOL})"
+				fi
+				say "\tDownloading the certificate [${CERT}] from the ${DESCRIPTION} ..."
+				download_from_port "${HOST_NAME}" "${SERVER_NAME}" "${PORT}" "${TLS_PROTOCOL}" "${OS_SSL_ANCHORS}" "${OS_SSL_SUFFIX}" || fail "\tFailed to download the certificate from the ${DESCRIPTION} as requested by [${CERT}]"
+				;;
+
+			* )
+				say "\tWARNING: Don't know how to handle certificate [${CERT}], skipping"
+				continue
+				;;
+		esac
+
+		(( ++COUNT ))
+	done < <(find "${SSL_TRUSTS_DIR}" -mindepth 1 -maxdepth 1 -name "ssl-trust-*.*" | sort)
+	if [ ${COUNT} -eq 0 ] ; then
+		say "\t✅ No certificates to deploy."
+	else
+		say "\t✅ Deployed ${COUNT} certificates!"
+	fi
+
 	################################################################################
 	#
-	# Initialize the ACME client
+	# Download our new certificates from the ACME instance
 	#
 	################################################################################
-	if step ca health &>/dev/null ; then
-		ok "Step CA client already initialized!"
-	else
-		doing "Initializing the Step CA Acme Client"
-		step ca bootstrap -f \
-			--ca-url "${ACME_URL}" \
-			--fingerprint "$(step certificate fingerprint "${ACME_ROOT_CA_ANCHOR}")"
-		say "\t✅ Done!"
-	fi
-
-	# This array will contain the list of (absolute) paths for all
-	# files whose ownership and permissions will be set to the most
-	# restrictive of all: only readable by the owner
-	SECURE_FILES=()
-
-	FQDN="$(hostname -f)"
-	IFS="." read POD SERVICE NAMESPACE SVC CLUSTER_DOMAIN <<< "${FQDN}"
-
-	VARIATIONS=( "${NAMESPACE}" "${SVC}" "${CLUSTER_DOMAIN}" )
-
-	SAN=( ${FQDN} $(list_hostname_variations "${POD}" "${SERVICE}" "${VARIATIONS[@]}") )
-
-	[ -n "${SERVICE}" ] && \
-		SAN+=( $(list_hostname_variations "${SERVICE}" "${VARIATIONS[@]}") )
-
-	# ACME_SERVICE_NAME is the "consumable" service, while
-	# SERVICE is the (possibly headless) default service
-	# associated to a pod. They *may* be the same but
-	# aren't required to be. Thus, we check to see if they're
-	# the same, to avoid adding duplicate values
-	set_or_default ACME_SERVICE_NAME "${SERVICE}"
-	[ "${ACME_SERVICE_NAME}" != "${SERVICE}" ] && \
-		SAN+=( $(list_hostname_variations "${ACME_SERVICE_NAME}" "${VARIATIONS[@]}") )
-
-	# These are extra service names through which this
-	# same pod may be reached
-	#
-	# The string may have multiple basenames (no dots!),
-	# and be separated by commas, spaces, or colons
-	while read EXTRA_NAME ; do
-		is_valid_hostname_part "${EXTRA_NAME}" || continue
-		SAN+=( $(list_hostname_variations "${EXTRA_NAME}" "${VARIATIONS[@]}") )
-	done < <(split_hostnames "${SSL_SERVICE_EXTRA_NAMES}")
-
-	[ -v POD_IP ] && \
-		POD_IP="$(validate_ip "${POD_IP}")" && [ "${POD_IP}" != "127.0.01" ] && SAN+=("${POD_IP}")
-
-	# The least specific values
-	SAN+=(
-		"${POD}"
-		"localhost.localdomain"
-		"localhost"
-	)
-
-	set_or_default SSL_EXTRA_SAN
-	set_as_boolean SSL_EXTRA_SAN_STRICT
-	set_or_default SSL_SERVICE_EXTRA_NAMES
-
-	# Add the extra SAN names, if provided. The list can be separated by spaces, commas, or colons
-	while read S ; do
-		if is_valid_ipv4 "${S}" || is_valid_hostname "${S}" ; then
-			SAN+=("${S}")
+	set_or_default ACME_PASSWORD_FILE "/.acme.password"
+	set_as_boolean KEYSTORE_GENERATED "false"
+	if [ -f "${ACME_PASSWORD_FILE}" ] ; then
+		################################################################################
+		#
+		# Initialize the ACME client
+		#
+		################################################################################
+		if step ca health &>/dev/null ; then
+			ok "Step CA client already initialized!"
 		else
-			# If we're strict, we explode ... we don't warn
-			as_boolean "${SSL_EXTRA_SAN_STRICT}" && CMD="fail" || CMD="warn"
-			"${CMD}" "The value [${S}] from SSL_EXTRA_SAN is neither a valid IP nor a valid hostname"
+			doing "Initializing the Step CA Acme Client"
+			step ca bootstrap -f \
+				--ca-url "${ACME_URL}" \
+				--fingerprint "$(step certificate fingerprint "${ACME_ROOT_CA_ANCHOR}")"
+			say "\t✅ Done!"
 		fi
-	done < <(split_hostnames "${SSL_EXTRA_SAN}")
 
-	ensure_dir "${SSL_DIR}"
+		# This array will contain the list of (absolute) paths for all
+		# files whose ownership and permissions will be set to the most
+		# restrictive of all: only readable by the owner
+		SECURE_FILES=()
 
-	if [ -v ACME_KEYSTORE_PASSWORD_FILE ] ; then
-		[ -n "${ACME_KEYSTORE_PASSWORD_FILE}" ] || fail "The variable ACME_KEYSTORE_PASSWORD_FILE may not be empty"
-		[ -s "${ACME_KEYSTORE_PASSWORD_FILE}" ] || fail "The password file [${ACME_KEYSTORE_PASSWORD_FILE}] may not be empty"
-	else
-		# We weren't given a password file to use, so use the default value
-		ACME_KEYSTORE_PASSWORD_FILE="${SSL_DIR}/keystore.pass"
-		SECURE_FILES+="${ACME_KEYSTORE_PASSWORD_FILE}"
+		FQDN="$(hostname -f)"
+		IFS="." read POD SERVICE NAMESPACE SVC CLUSTER_DOMAIN <<< "${FQDN}"
 
-		# Allow the use of ACME_KEYSTORE_PASSWORD to set the password. This isn't
-		# particularly secure, but it may be required in some instances where the
-		# pod needs to know the password beforehand (i.e. b/c Helm needs to know it)
-		if [ -v ACME_KEYSTORE_PASSWORD ] ; then
-			[ -n "${ACME_KEYSTORE_PASSWORD}" ] || fail "The variable ACME_KEYSTORE_PASSWORD may not be empty"
-			echo -n "${ACME_KEYSTORE_PASSWORD}" > "${ACME_KEYSTORE_PASSWORD_FILE}" || fail "Failed to render the password file at [${ACME_KEYSTORE_PASSWORD_FILE}] with the password given in ACME_KEYSTORE_PASSWORD"
+		VARIATIONS=( "${NAMESPACE}" "${SVC}" "${CLUSTER_DOMAIN}" )
+
+		SAN=( ${FQDN} $(list_hostname_variations "${POD}" "${SERVICE}" "${VARIATIONS[@]}") )
+
+		[ -n "${SERVICE}" ] && \
+			SAN+=( $(list_hostname_variations "${SERVICE}" "${VARIATIONS[@]}") )
+
+		# ACME_SERVICE_NAME is the "consumable" service, while
+		# SERVICE is the (possibly headless) default service
+		# associated to a pod. They *may* be the same but
+		# aren't required to be. Thus, we check to see if they're
+		# the same, to avoid adding duplicate values
+		set_or_default ACME_SERVICE_NAME "${SERVICE}"
+		[ "${ACME_SERVICE_NAME}" != "${SERVICE}" ] && \
+			SAN+=( $(list_hostname_variations "${ACME_SERVICE_NAME}" "${VARIATIONS[@]}") )
+
+		# These are extra service names through which this
+		# same pod may be reached
+		#
+		# The string may have multiple basenames (no dots!),
+		# and be separated by commas, spaces, or colons
+		while read EXTRA_NAME ; do
+			is_valid_hostname_part "${EXTRA_NAME}" || continue
+			SAN+=( $(list_hostname_variations "${EXTRA_NAME}" "${VARIATIONS[@]}") )
+		done < <(split_hostnames "${SSL_SERVICE_EXTRA_NAMES}")
+
+		[ -v POD_IP ] && \
+			POD_IP="$(validate_ip "${POD_IP}")" && [ "${POD_IP}" != "127.0.01" ] && SAN+=("${POD_IP}")
+
+		# The least specific values
+		SAN+=(
+			"${POD}"
+			"localhost.localdomain"
+			"localhost"
+		)
+
+		set_or_default SSL_EXTRA_SAN
+		set_as_boolean SSL_EXTRA_SAN_STRICT
+		set_or_default SSL_SERVICE_EXTRA_NAMES
+
+		# Add the extra SAN names, if provided. The list can be separated by spaces, commas, or colons
+		while read S ; do
+			if is_valid_ipv4 "${S}" || is_valid_hostname "${S}" ; then
+				SAN+=("${S}")
+			else
+				# If we're strict, we explode ... we don't warn
+				as_boolean "${SSL_EXTRA_SAN_STRICT}" && CMD="fail" || CMD="warn"
+				"${CMD}" "The value [${S}] from SSL_EXTRA_SAN is neither a valid IP nor a valid hostname"
+			fi
+		done < <(split_hostnames "${SSL_EXTRA_SAN}")
+
+		ensure_dir "${SSL_DIR}"
+
+		if [ -v ACME_KEYSTORE_PASSWORD_FILE ] ; then
+			[ -n "${ACME_KEYSTORE_PASSWORD_FILE}" ] || fail "The variable ACME_KEYSTORE_PASSWORD_FILE may not be empty"
+			[ -s "${ACME_KEYSTORE_PASSWORD_FILE}" ] || fail "The password file [${ACME_KEYSTORE_PASSWORD_FILE}] may not be empty"
 		else
-			# We weren't given a password, so just render a random one
-			render_password > "${ACME_KEYSTORE_PASSWORD_FILE}" || fail "Failed to render a new password into [${ACME_KEYSTORE_PASSWORD_FILE}]"
+			# We weren't given a password file to use, so use the default value
+			ACME_KEYSTORE_PASSWORD_FILE="${SSL_DIR}/keystore.pass"
+			SECURE_FILES+="${ACME_KEYSTORE_PASSWORD_FILE}"
+
+			# Allow the use of ACME_KEYSTORE_PASSWORD to set the password. This isn't
+			# particularly secure, but it may be required in some instances where the
+			# pod needs to know the password beforehand (i.e. b/c Helm needs to know it)
+			if [ -v ACME_KEYSTORE_PASSWORD ] ; then
+				[ -n "${ACME_KEYSTORE_PASSWORD}" ] || fail "The variable ACME_KEYSTORE_PASSWORD may not be empty"
+				echo -n "${ACME_KEYSTORE_PASSWORD}" > "${ACME_KEYSTORE_PASSWORD_FILE}" || fail "Failed to render the password file at [${ACME_KEYSTORE_PASSWORD_FILE}] with the password given in ACME_KEYSTORE_PASSWORD"
+			else
+				# We weren't given a password, so just render a random one
+				render_password > "${ACME_KEYSTORE_PASSWORD_FILE}" || fail "Failed to render a new password into [${ACME_KEYSTORE_PASSWORD_FILE}]"
+			fi
 		fi
-	fi
-	export ACME_KEYSTORE_PASSWORD="$(<"${ACME_KEYSTORE_PASSWORD_FILE}")"
+		export ACME_KEYSTORE_PASSWORD="$(<"${ACME_KEYSTORE_PASSWORD_FILE}")"
 
-	# Make sure our SAN list is unique, and
-	# sorted, and pre-pend the --san argument
-	SAN_ARG=()
-	[ "${#SAN[@]}" -gt 0 ] && doing "Rendering certificate for the following SANs:"
-	while read S ; do
-		say "\t${S}"
-		SAN_ARG+=(--san "${S}")
-	done < <(echo "${SAN[@]}" | tr '[:space:]' '\n' | sed -e '/^\s*$/d' | sort -u)
+		# Make sure our SAN list is unique, and
+		# sorted, and pre-pend the --san argument
+		SAN_ARG=()
+		[ "${#SAN[@]}" -gt 0 ] && doing "Rendering certificate for the following SANs:"
+		while read S ; do
+			say "\t${S}"
+			SAN_ARG+=(--san "${S}")
+		done < <(echo "${SAN[@]}" | tr '[:space:]' '\n' | sed -e '/^\s*$/d' | sort -u)
 
-	# Note: the not-before is "back in time" to accommodate for clock skew. We've
-	# observed that when there's a bit of clock skew, certificate issuance goes
-	# kind of wonky b/c the cert will be OK, but it will not be accepted by the
-	# consuming processes until the not-before time has past. By using a back-in-time
-	# approach we ensure that the certificate will always be "born ready"
-	doing "Rendering a new certificate for this pod's use"
-	step ca certificate \
-		"${FQDN}" "${SSL_DIR}/cert.pem" "${SSL_DIR}/cert.key" \
-		"${SAN_ARG[@]}" \
-		--force \
-		--not-before="-1h30m" \
-		--size 2048 \
-		--kty RSA \
-		--provisioner-password-file "${ACME_PASSWORD_FILE}" \
-		--password-file="${ACME_KEYSTORE_PASSWORD_FILE}"
-	doing "Removing extra stuff from the certificate..."
-	sed -i -e '/^-\+END CERTIFICATE-\+$/q' "${SSL_DIR}/cert.pem"
-	say "\t✅ Certificate ready!"
+		# Note: the not-before is "back in time" to accommodate for clock skew. We've
+		# observed that when there's a bit of clock skew, certificate issuance goes
+		# kind of wonky b/c the cert will be OK, but it will not be accepted by the
+		# consuming processes until the not-before time has past. By using a back-in-time
+		# approach we ensure that the certificate will always be "born ready"
+		doing "Rendering a new certificate for this pod's use"
+		step ca certificate \
+			"${FQDN}" "${SSL_DIR}/cert.pem" "${SSL_DIR}/cert.key" \
+			"${SAN_ARG[@]}" \
+			--force \
+			--not-before="-1h30m" \
+			--size 2048 \
+			--kty RSA \
+			--provisioner-password-file "${ACME_PASSWORD_FILE}" \
+			--password-file="${ACME_KEYSTORE_PASSWORD_FILE}"
+		doing "Removing extra stuff from the certificate..."
+		sed -i -e '/^-\+END CERTIFICATE-\+$/q' "${SSL_DIR}/cert.pem"
+		say "\t✅ Certificate ready!"
 
-	set_as_boolean SSL_DH_APPEND "false"
-	if as_boolean "${SSL_DH_APPEND}" ; then
-		set_or_default SSL_DH_SIZE "1024"
-		doing "Rendering the Diffie-Hellman parameters..."
-		OUT="$(openssl dhparam -outform pem -out "${SSL_DIR}/dh.pem" "${SSL_DH_SIZE}" 2>&1)"  || fail "Failed to generate the DH parameters (rc=${?}): ${OUT}"
-		doing "Appending Diffie-Hellman parameters to the certificate"
-		( echo "" ; cat "${SSL_DIR}/dh.pem" ) >> "${SSL_DIR}/cert.pem" || fail "Failed to append the DH parameters to the certifiate"
-		say "\tDH parameters appended!"
-	fi
+		set_as_boolean SSL_DH_APPEND "false"
+		if as_boolean "${SSL_DH_APPEND}" ; then
+			set_or_default SSL_DH_SIZE "1024"
+			doing "Rendering the Diffie-Hellman parameters..."
+			OUT="$(openssl dhparam -outform pem -out "${SSL_DIR}/dh.pem" "${SSL_DH_SIZE}" 2>&1)"  || fail "Failed to generate the DH parameters (rc=${?}): ${OUT}"
+			doing "Appending Diffie-Hellman parameters to the certificate"
+			( echo "" ; cat "${SSL_DIR}/dh.pem" ) >> "${SSL_DIR}/cert.pem" || fail "Failed to append the DH parameters to the certifiate"
+			say "\tDH parameters appended!"
+		fi
 
-	SECURE_FILES+=("${SSL_DIR}/cert.key")
+		SECURE_FILES+=("${SSL_DIR}/cert.key")
 
-	doing "Creating a AES (PKCS8) encrypted version of the key..."
-	openssl pkcs8 -topk8 \
-		-in "${SSL_DIR}/cert.key" \
-		-out "${SSL_DIR}/cert.key.aes" \
-		-v2 aes-256-cbc \
-		-passout env:ACME_KEYSTORE_PASSWORD \
-		&& say "\t✅ AES-256 (PKCS8) Encrypted key ready!" \
-		|| warn "Failed to create the AES-256 (PKCS8) Encrypted certificate key"
-
-	if ! as_boolean "${FIPS}" ; then
-		doing "Creating an RSA encrypted version of the key..."
-		openssl rsa -aes256 \
+		doing "Creating a AES (PKCS8) encrypted version of the key..."
+		openssl pkcs8 -topk8 \
 			-in "${SSL_DIR}/cert.key" \
-			-out "${SSL_DIR}/cert.key.rsa" \
+			-out "${SSL_DIR}/cert.key.aes" \
+			-v2 aes-256-cbc \
 			-passout env:ACME_KEYSTORE_PASSWORD \
-			&& say "\t✅ RSA Encrypted key ready!" \
-			|| warn "Failed to create the RSA Encrypted certificate key"
+			&& say "\t✅ AES-256 (PKCS8) Encrypted key ready!" \
+			|| warn "Failed to create the AES-256 (PKCS8) Encrypted certificate key"
+
+		if ! as_boolean "${FIPS}" ; then
+			doing "Creating an RSA encrypted version of the key..."
+			openssl rsa -aes256 \
+				-in "${SSL_DIR}/cert.key" \
+				-out "${SSL_DIR}/cert.key.rsa" \
+				-passout env:ACME_KEYSTORE_PASSWORD \
+				&& say "\t✅ RSA Encrypted key ready!" \
+				|| warn "Failed to create the RSA Encrypted certificate key"
+		fi
+
+		doing "Copying the root and intermediate CAs into the target directory..."
+		cp -f "${ACME_ROOT_CA_ANCHOR}" "${SSL_DIR}/ca-root.pem"
+		cp -f "${ACME_INT_CA_ANCHOR}" "${SSL_DIR}/ca-int.pem"
+		cat \
+			"${ACME_INT_CA_ANCHOR}" \
+			"${ACME_ROOT_CA_ANCHOR}" \
+			> "${SSL_DIR}/ca-chain.pem"
+		say "\t✅ Done!"
+
+		SECURE_FILES+=("${ACME_KEYSTORE_PASSWORD_FILE}")
+
+		doing "Rendering the certificate files for HAProxy..."
+		cat \
+			"${SSL_DIR}/cert.pem" \
+			"${SSL_DIR}/ca-chain.pem" \
+			"${SSL_DIR}/cert.key" \
+			> "${SSL_DIR}/haproxy-cert.pem"
+		SECURE_FILES+=("${SSL_DIR}/haproxy-cert.pem")
+
+		say "\t✅ Done!"
+
+		if as_boolean "${KEYTOOL}" ; then
+			doing "Rendering a ${JAVA_KEYSTORE_TYPE} Keystore with the new certificate & key..."
+
+			export JAVA_KEY_PASSWORD="${ACME_KEYSTORE_PASSWORD}"
+			export JAVA_KEYSTORE_PASSWORD="${ACME_KEYSTORE_PASSWORD}"
+			export JAVA_KEYSTORE_PASSWORD_FILE="${ACME_KEYSTORE_PASSWORD_FILE}"
+			export JAVA_TRUSTSTORE_PASSWORD="${JAVA_KEYSTORE_PASSWORD}"
+			export JAVA_TRUSTSTORE_PASSWORD_FILE="${JAVA_KEYSTORE_PASSWORD_FILE}"
+
+			set_or_default DEFAULT_PBE "AES-256-CBC"
+			set_or_default PKCS12_KEY_PBE "${DEFAULT_PBE}"
+			set_or_default PKCS12_CERT_PBE "${DEFAULT_PBE}"
+
+			PKCS12_FLAGS=()
+			[ -n "${PKCS12_KEY_PBE}" ] && PKCS12_FLAGS+=(-keypbe "${PKCS12_KEY_PBE}")
+			[ -n "${PKCS12_CERT_PBE}" ] && PKCS12_FLAGS+=(-certpbe "${PKCS12_CERT_PBE}")
+
+			openssl pkcs12 \
+				-export \
+				-in "${SSL_DIR}/cert.pem" \
+				-inkey "${SSL_DIR}/cert.key" \
+				-passin env:JAVA_KEYSTORE_PASSWORD \
+				-name "${JAVA_KEY_ALIAS}" \
+				-out "${JAVA_KEYSTORE}" \
+				"${PKCS12_FLAGS[@]}" \
+				-passout env:JAVA_KEYSTORE_PASSWORD
+			say "\t✅ Ready!"
+			KEYSTORE_GENERATED="true"
+		fi
+
+		doing "Setting tight permissions for the generated data..."
+
+		# By default, owned by root but readable by ACM_GROUP
+		chown -R "root:${ACM_GROUP}" "${SSL_DIR}"
+		chmod -R a=rX "${SSL_DIR}"
+
+		# Secure the most sensitive files so they're only readable
+		# by the user who will be consuming them ... the other files
+		# can easily be world-readable since they're all encrypted
+		# one way or another, or are meant to be publicly-accessible
+		if [ ${#SECURE_FILES[@]} -gt 0 ] ; then
+			KEY_OWNER="root"
+			[ -v SUDO_USER ] && KEY_OWNER="${SUDO_USER}"
+			chown "${KEY_OWNER}:${ACM_GROUP}" "${SECURE_FILES[@]}"
+			chmod -R u=r,go= "${SECURE_FILES[@]}"
+		fi
+
+		say "\t✅ Done!"
+	else
+		err "Couldn't find the provisioner password file at [${ACME_PASSWORD_FILE}], did not generate any new certificates or keystores"
 	fi
 
-	doing "Copying the root and intermediate CAs into the target directory..."
-	cp -f "${ACME_ROOT_CA_ANCHOR}" "${SSL_DIR}/ca-root.pem"
-	cp -f "${ACME_INT_CA_ANCHOR}" "${SSL_DIR}/ca-int.pem"
-	cat \
-		"${ACME_INT_CA_ANCHOR}" \
-		"${ACME_ROOT_CA_ANCHOR}" \
-		> "${SSL_DIR}/ca-chain.pem"
-	say "\t✅ Done!"
+	doing "Updating the trusted certificates"
+	chown -R root:root "${OS_SSL_ANCHORS}"
+	chmod -R a=rwX "${OS_SSL_ANCHORS}"
+	( execute "${OS_SSL_UPDATE_CMD[@]}" ) || fail "Failed to update the CA trusts"
+	say "\t✅ CA trusts updated system-wide!"
 
-	SECURE_FILES+=("${ACME_KEYSTORE_PASSWORD_FILE}")
+	#
+	# This little block HAS to happen after the OS's anchors are updated
+	# using the O/S tool, to ensure that all the required certificates
+	# get copied correctly, and we don't miss anything
+	#
+	# Also we only do this if we built a keystore ... if we didn't build one,
+	# we don't really care
+	#
+	if as_boolean "${KEYTOOL}" && as_boolean "${KEYSTORE_GENERATED}" ; then
+		doing "Adding the global trusts to the ${JAVA_KEYSTORE_TYPE} keystore!"
+		add_global_trusts "${JAVA_KEYSTORE_TYPE}" "${JAVA_KEYSTORE}" "${JAVA_KEYSTORE_PASSWORD_FILE}" || fail "Failed to add the global trusts to the keystore!"
+		say "\t✅ Global trusts added!"
 
-	doing "Rendering the certificate files for HAProxy..."
-	cat \
-		"${SSL_DIR}/cert.pem" \
-		"${SSL_DIR}/ca-chain.pem" \
-		"${SSL_DIR}/cert.key" \
-		> "${SSL_DIR}/haproxy-cert.pem"
-	SECURE_FILES+=("${SSL_DIR}/haproxy-cert.pem")
+		#
+		# Add the Java variables to the environment file
+		# in preparation for the final output
+		#
+		SSL_ENV_FILE_VARS+=(
+			JAVA_KEYSTORE
+			JAVA_KEYSTORE_PASSWORD_FILE
+			JAVA_KEYSTORE_PASSWORD
+			JAVA_KEYSTORE_TYPE
+			JAVA_KEYSTORE_PROVIDER
+			JAVA_KEYSTORE_PROVIDER_PATH
+			JAVA_KEYSTORE_PROVIDER_ARGS
 
-	say "\t✅ Done!"
+			JAVA_KEY_ALIAS
+			JAVA_KEY_PASSWORD_FILE
+			JAVA_KEY_PASSWORD
 
-	if as_boolean "${KEYTOOL}" ; then
-		doing "Rendering a ${JAVA_KEYSTORE_TYPE} Keystore with the new certificate & key..."
+			JAVA_TRUSTSTORE
+			JAVA_TRUSTSTORE_PASSWORD_FILE
+			JAVA_TRUSTSTORE_PASSWORD
+			JAVA_TRUSTSTORE_TYPE
+			JAVA_TRUSTSTORE_PROVIDER
+			JAVA_TRUSTSTORE_PROVIDER_PATH
+			JAVA_TRUSTSTORE_PROVIDER_ARGS
 
-		export JAVA_KEY_PASSWORD="${ACME_KEYSTORE_PASSWORD}"
-		export JAVA_KEYSTORE_PASSWORD="${ACME_KEYSTORE_PASSWORD}"
-		export JAVA_KEYSTORE_PASSWORD_FILE="${ACME_KEYSTORE_PASSWORD_FILE}"
-		export JAVA_TRUSTSTORE_PASSWORD="${JAVA_KEYSTORE_PASSWORD}"
-		export JAVA_TRUSTSTORE_PASSWORD_FILE="${JAVA_KEYSTORE_PASSWORD_FILE}"
+			JAVA_GLOBAL_TRUSTSTORE
+			JAVA_GLOBAL_TRUSTSTORE_TYPE
+			JAVA_GLOBAL_TRUSTSTORE_PASSWORD
 
-		set_or_default DEFAULT_PBE "AES-256-CBC"
-		set_or_default PKCS12_KEY_PBE "${DEFAULT_PBE}"
-		set_or_default PKCS12_CERT_PBE "${DEFAULT_PBE}"
+			JAVAX_NET_SSL_OPTIONS
+		)
 
-		PKCS12_FLAGS=()
-		[ -n "${PKCS12_KEY_PBE}" ] && PKCS12_FLAGS+=(-keypbe "${PKCS12_KEY_PBE}")
-		[ -n "${PKCS12_CERT_PBE}" ] && PKCS12_FLAGS+=(-certpbe "${PKCS12_CERT_PBE}")
-
-		openssl pkcs12 \
-			-export \
-			-in "${SSL_DIR}/cert.pem" \
-			-inkey "${SSL_DIR}/cert.key" \
-			-passin env:JAVA_KEYSTORE_PASSWORD \
-			-name "${JAVA_KEY_ALIAS}" \
-			-out "${JAVA_KEYSTORE}" \
-			"${PKCS12_FLAGS[@]}" \
-			-passout env:JAVA_KEYSTORE_PASSWORD
-		say "\t✅ Ready!"
-		KEYSTORE_GENERATED="true"
+		#
+		# Render the final JVM options consuming all the above variables
+		#
+		export JAVAX_NET_SSL_OPTIONS="$(echo -n "${JAVAX_NET_SSL_OPTS[@]}" | envsubst)"
 	fi
 
-	doing "Setting tight permissions for the generated data..."
-
-	# By default, owned by root but readable by ACM_GROUP
-	chown -R "root:${ACM_GROUP}" "${SSL_DIR}"
-	chmod -R a=rX "${SSL_DIR}"
-
-	# Secure the most sensitive files so they're only readable
-	# by the user who will be consuming them ... the other files
-	# can easily be world-readable since they're all encrypted
-	# one way or another, or are meant to be publicly-accessible
-	if [ ${#SECURE_FILES[@]} -gt 0 ] ; then
-		KEY_OWNER="root"
-		[ -v SUDO_USER ] && KEY_OWNER="${SUDO_USER}"
-		chown "${KEY_OWNER}:${ACM_GROUP}" "${SECURE_FILES[@]}"
-		chmod -R u=r,go= "${SECURE_FILES[@]}"
-	fi
-
-	say "\t✅ Done!"
-else
-	err "Couldn't find the provisioner password file at [${ACME_PASSWORD_FILE}], did not generate any new certificates or keystores"
-fi
-
-doing "Updating the trusted certificates"
-chown -R root:root "${OS_SSL_ANCHORS}"
-chmod -R a=rwX "${OS_SSL_ANCHORS}"
-( execute "${OS_SSL_UPDATE_CMD[@]}" ) || fail "Failed to update the CA trusts"
-say "\t✅ CA trusts updated system-wide!"
-
-#
-# This little block HAS to happen after the OS's anchors are updated
-# using the O/S tool, to ensure that all the required certificates
-# get copied correctly, and we don't miss anything
-#
-# Also we only do this if we built a keystore ... if we didn't build one,
-# we don't really care
-#
-if as_boolean "${KEYTOOL}" && as_boolean "${KEYSTORE_GENERATED}" ; then
-	doing "Adding the global trusts to the ${JAVA_KEYSTORE_TYPE} keystore!"
-	add_global_trusts "${JAVA_KEYSTORE_TYPE}" "${JAVA_KEYSTORE}" "${JAVA_KEYSTORE_PASSWORD_FILE}" || fail "Failed to add the global trusts to the keystore!"
-	say "\t✅ Global trusts added!"
-
-	#
-	# Add the Java variables to the environment file
-	# in preparation for the final output
-	#
-	SSL_ENV_FILE_VARS+=(
-		JAVA_KEYSTORE
-		JAVA_KEYSTORE_PASSWORD_FILE
-		JAVA_KEYSTORE_PASSWORD
-		JAVA_KEYSTORE_TYPE
-		JAVA_KEYSTORE_PROVIDER
-		JAVA_KEYSTORE_PROVIDER_PATH
-		JAVA_KEYSTORE_PROVIDER_ARGS
-
-		JAVA_KEY_ALIAS
-		JAVA_KEY_PASSWORD_FILE
-		JAVA_KEY_PASSWORD
-
-		JAVA_TRUSTSTORE
-		JAVA_TRUSTSTORE_PASSWORD_FILE
-		JAVA_TRUSTSTORE_PASSWORD
-		JAVA_TRUSTSTORE_TYPE
-		JAVA_TRUSTSTORE_PROVIDER
-		JAVA_TRUSTSTORE_PROVIDER_PATH
-		JAVA_TRUSTSTORE_PROVIDER_ARGS
-
-		JAVA_GLOBAL_TRUSTSTORE
-		JAVA_GLOBAL_TRUSTSTORE_TYPE
-		JAVA_GLOBAL_TRUSTSTORE_PASSWORD
-
-		JAVAX_NET_SSL_OPTIONS
-	)
-
-	#
-	# Render the final JVM options consuming all the above variables
-	#
-	export JAVAX_NET_SSL_OPTIONS="$(echo -n "${JAVAX_NET_SSL_OPTS[@]}" | envsubst)"
-fi
-
-export RESULT_OK="true"
-as_boolean "${FIPS}" && FIPS_LABEL=" (FIPS is active)" || FIPS_LABEL=""
-ok "SSL ready! The environment can be configured by sourcing [${SSL_ENV_FILE}]${FIPS_LABEL}"
+	export RESULT_OK="true"
+	as_boolean "${FIPS}" && FIPS_LABEL=" (FIPS is active)" || FIPS_LABEL=""
+	ok "SSL ready! The environment can be configured by sourcing [${SSL_ENV_FILE}]${FIPS_LABEL}"
+} 999<"${LOCK}"
