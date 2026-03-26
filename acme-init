@@ -757,11 +757,11 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			-export \
 			-in "${SSL_DIR}/cert.pem" \
 			-inkey "${SSL_DIR}/cert.key" \
-			-passin "file:${JAVA_KEYSTORE_PASSWORD_FILE}" \
+			-passin env:JAVA_KEYSTORE_PASSWORD \
 			-name "${JAVA_KEY_ALIAS}" \
 			-out "${JAVA_KEYSTORE}" \
 			"${PKCS12_FLAGS[@]}" \
-			-passout "file:${JAVA_KEYSTORE_PASSWORD_FILE}"
+			-passout env:JAVA_KEYSTORE_PASSWORD
 		say "\t✅ Ready!"
 		KEYSTORE_GENERATED="true"
 	fi
