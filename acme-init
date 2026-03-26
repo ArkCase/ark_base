@@ -761,7 +761,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			-name "${JAVA_KEY_ALIAS}" \
 			-out "${JAVA_KEYSTORE}" \
 			"${PKCS12_FLAGS[@]}" \
-			-passout "file:${JAVA_KEYSTORE_PASSWORD_FILE}" \
+			-passout "file:${JAVA_KEYSTORE_PASSWORD_FILE}"
 		say "\t✅ Ready!"
 		KEYSTORE_GENERATED="true"
 	fi
