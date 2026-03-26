@@ -1,2 +1,43 @@
 #!/bin/bash
-exec /usr/bin/tail -f /dev/null
+
+set -euo pipefail
+. /.functions
+
+set_or_default MARKER "/tmp/terminate"
+
+
+MARKER_DIR="$(readlink -f "$(dirname "${MARKER}")")"
+MARKER_NAME="$(basename "${MARKER}")"
+MARKER="${MARKER_DIR}/${MARKER_NAME}"
+
+sleeping "Sleeping until the marker file is created"
+OUT="$(inotifywait --quiet --event close_write --include "${MARKER_NAME}" "${MARKER_DIR}" 2>&1)" || fail "File wait failed (rc=${?}): ${OUT}"
+
+require_file_readable "${MARKER}"
+
+# If the marker is not empty, it may contain a number
+# between 0 and 255 in which case it will be our exit status.
+#
+# Any other text will be translated as the exit status "1"
+DATA="$(<"${MARKER}")" || fail "Failed to read the contents of the marker [${MARKER}]"
+RC=0
+# An empty marker == 0 exit status
+if [ -n "${DATA}" ] ; then
+	if [[ "${DATA}" =~ ^(0|[1-9][0-9]*)$ ]] ; then
+		# A marker number must be between 0 and 255, or it gets folded to 1
+		RC="${DATA}"
+		[ 0 -le ${RC} ] || { err "Marker number out of range: ${RC}" ; RC=1 ; }
+		[ ${RC} -le 255 ] || { err "Marker number out of range: ${RC}" ; RC=1 ; }
+	else
+		# Non-numeric content, so spit it out, and exit with status 1
+		RC=1
+		eyes "Marker contents: [\n${DATA}\n]"
+	fi
+fi
+
+#
+# Exit with the correct status
+#
+[ ${RC} -eq 0 ] && quit "Wait terminated cleanly"
+err "Wait terminating with exit status ${RC}"
+exit ${RC}
