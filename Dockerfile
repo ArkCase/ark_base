@@ -135,6 +135,7 @@ RUN mkdir -p "${HOME}/.pki/nssdb" && \
     apt-get -y dist-upgrade && \
     apt-get -y install \
         acl \
+        apt-transport-https \
         attr \
         bash-completion \
         bind9-utils \
