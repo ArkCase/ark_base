@@ -1578,20 +1578,18 @@ set_godebug_fips140()
 
 	if is_fips ; then
 		ok "FIPS is available!"
-		FIPS_MODE="only"
+		FIPS_MODE="${DEFAULT_GOLANG_FIPS_MODE:-"on"}"
 	else
 		err "FIPS is not available"
 	fi
 
 	# Allow for customizing the value set for GODEBUG
 	# for experimentation, but ignore invalid values
-	if [ -v GOLANG_FIPS140 ] ; then
-		FIPS_MODE="${GOLANG_FIPS140,,}"
-		case "${FIPS_MODE}" in
-			only | on | off ) ;;
-			* ) err "Unsupported FIPS mode for GoLang [${GOLANG_FIPS140}] - must be one of 'only', 'on', or 'off'" ; return 1 ;;
-		esac
-	fi
+	[ -n "${GOLANG_FIPS_MODE:-}" ] && FIPS_MODE="${GOLANG_FIPS_MODE,,}"
+	case "${FIPS_MODE}" in
+		only | on | off ) ;;
+		* ) err "Unsupported FIPS mode for GoLang [${FIPS_MODE}] - must be one of 'only', 'on', or 'off'" ; return 1 ;;
+	esac
 
 	# Configure any GoLang stuff
 	set_or_default GODEBUG
