@@ -702,6 +702,7 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 
 		doing "Creating a AES (PKCS8) encrypted version of the key..."
 		openssl pkcs8 -topk8 \
+			-nocrypt \
 			-in "${SSL_DIR}/cert.key" \
 			-out "${SSL_DIR}/cert.key.aes" \
 			-v2 aes-256-cbc \
