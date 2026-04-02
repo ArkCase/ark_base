@@ -297,6 +297,19 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 	KEYTOOL="false"
 	type -P keytool &>/dev/null && KEYTOOL="true"
 
+	################################################################################
+	#
+	# Apply any FIPS-related adjustments
+	#
+	################################################################################
+	export FIPS="false"
+	is_fips && FIPS="true"
+
+	#
+	# Configure any GoLang stuff
+	#
+	set_godebug_fips140
+
 	#
 	# These are the values we have to output into the environment
 	# file at the end of processing
@@ -320,7 +333,6 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 		#
 		# Define all the Java-related variables
 		#
-		export JAVA_KEYSTORE="${SSL_DIR}/keystore.pkcs12"
 		export JAVA_KEYSTORE_PASSWORD_FILE=""
 		export JAVA_KEYSTORE_TYPE="PKCS12"
 		export JAVA_KEYSTORE_PROVIDER=""
@@ -331,7 +343,6 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 		export JAVA_KEY_PASSWORD_FILE=""
 		export JAVA_KEY_PASSWORD=""
 
-		export JAVA_TRUSTSTORE="${JAVA_KEYSTORE}"
 		export JAVA_TRUSTSTORE_PASSWORD_FILE=""
 		export JAVA_TRUSTSTORE_TYPE="${JAVA_KEYSTORE_TYPE}"
 		export JAVA_TRUSTSTORE_PROVIDER=""
@@ -359,23 +370,12 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 			-Djavax.net.ssl.trustStoreType='${JAVA_TRUSTSTORE_TYPE}'
 			-Djavax.net.ssl.trustStoreProvider='${JAVA_TRUSTSTORE_PROVIDER}'
 		)
-	fi
-
-	################################################################################
-	#
-	# Apply any FIPS-related adjustments
-	#
-	################################################################################
-	export FIPS="false"
-	if is_fips ; then
-		FIPS="true"
-
-		set_godebug_fips140
 
 		#
 		# Apply the FIPS adjustments
 		#
-		if as_boolean "${KEYTOOL}" ; then
+		if is_fips ; then
+
 
 			set_or_default JAVA_FIPS_KEYSTORE_TYPE "BCPKS12"
 			set_or_default JAVA_FIPS_KEYSTORE_PROVIDER "org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider"
@@ -403,12 +403,13 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 				-Dssl.TrustManagerFactory.algorithm="PKIX"
 			)
 		fi
-	fi
 
-	#
-	# Configure any GoLang stuff
-	#
-	set_godebug_fips140
+		#
+		# We name the stores last so we use the correct extension
+		#
+		export JAVA_KEYSTORE="${SSL_DIR}/keystore.${JAVA_KEYSTORE_TYPE,,}"
+		export JAVA_TRUSTSTORE="${JAVA_KEYSTORE}"
+	fi
 
 	################################################################################
 	#
