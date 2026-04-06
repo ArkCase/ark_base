@@ -841,10 +841,10 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 				"${SSL_DIR}/cert.key" \
 				> "${SSL_DIR}/haproxy-cert.pem"
 			SECURE_FILES+=("${SSL_DIR}/haproxy-cert.pem")
+			say "\t✅ Done!"
 		fi
-		say "\t✅ Done!"
 
-		doing "Setting tight permissions for the generated data..."
+		doing "Protecting the generated data..."
 
 		# By default, owned by root but readable by ACM_GROUP
 		chown -R "root:${ACM_GROUP}" "${SSL_DIR}"
@@ -882,7 +882,6 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 	#
 	if as_boolean "${KEYTOOL}" && is_file "${JAVA_KEYSTORE}" ; then
 		doing "Adding the global trusts to the ${JAVA_KEYSTORE_TYPE} keystore!"
-		# TEST THIS IN FIPS!!
 		CMD=(
 			keytool -importkeystore
 				-destkeystore "${JAVA_KEYSTORE}"
