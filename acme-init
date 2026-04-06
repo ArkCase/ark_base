@@ -351,14 +351,14 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 		if is_fips ; then
 
 
-			set_or_default JAVA_FIPS_KEYSTORE_TYPE "BCPKS12"
+			set_or_default JAVA_FIPS_KEYSTORE_TYPE "BCPKCS12"
 			set_or_default JAVA_FIPS_KEYSTORE_PROVIDER "org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider"
 			set_or_default JAVA_FIPS_KEYSTORE_PROVIDER_PATH "${BC_PROV_JAR:-}"
 			set_or_default JAVA_FIPS_KEYSTORE_PROVIDER_ARGS
 
 			# TODO: Should we support paths as well? For now, no...
 			# TODO: do we want to validate if the class is present?
-			require_file_readable "${JAVA_KEYSTORE_PROVIDER_PATH}"
+			require_file_readable "${JAVA_FIPS_KEYSTORE_PROVIDER_PATH}"
 
 			#
 			# The keystore is now FIPS-capable
