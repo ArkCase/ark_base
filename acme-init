@@ -203,7 +203,8 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 
 	################################################################################
 	#
-	# If we've already computed all our stuff, 
+	# If we've already computed all our stuff, and saved it to the SSL_ENV_FILE,
+	# we need not compute it again because it can be re-used from there
 	#
 	################################################################################
 	is_file_readable "${SSL_ENV_FILE}" && quit "SSL is already initialized, you can load the settings from [${SSL_ENV_FILE}]"
@@ -211,44 +212,47 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 	#
 	# Make sure the environment file is created every time if we exit cleanly
 	#
-	RESULT_OK="false"
+	export RESULT_OK="false"
 	finalize()
 	{
 		[ -v GARBAGE ] && shred -u "${GARBAGE[@]}" &>/dev/null
-		if as_boolean "${RESULT_OK}" ; then
-			local DIR="$(dirname "${SSL_ENV_FILE}")" 
-			mkdir -p "${DIR}"
 
-			# Output the variable values!
-			local UNDEF=()
-			{
-				echo "#!/bin/bash"
-				echo ""
-				echo "#"
-				echo "# Source this file to define all SSL-related environment variables"
-				echo "#"
-				echo ""
-				for VAR in "${SSL_ENV_FILE_VARS[@]}" ; do
-					if [ -v "${VAR}" ] ; then
-						echo "export ${VAR}=${!VAR@Q}"
-					else
-						UNDEF+=( "${VAR}" )
-						echo "# ${VAR} was undefined"
-					fi
-				done
-				echo ""
-				echo "#"
-				echo "# End of the SSL environment variable definitions"
-				echo "#"
-			} > "${SSL_ENV_FILE}"
+		# Shortcut - die early!
+		as_boolean "${RESULT_OK}" || return 0
 
-			[ ${#UNDEF[@]} -gt 0 ] && \
-				warn "The following variables were undefined [ ${UNDEF[@]} ]"
+		# Output the environment file
+		local DIR="$(dirname "${SSL_ENV_FILE}")"
+		mkdir -p "${DIR}" &>/dev/null
 
-			# Make sure everything is readable
-			chmod a+X "${DIR}"
-			chmod ugo=r "${SSL_ENV_FILE}"
-		fi
+		# Output the variable values!
+		local UNDEF=()
+		{
+			echo "#!/bin/bash"
+			echo ""
+			echo "#"
+			echo "# Source this file to define all SSL-related environment variables"
+			echo "#"
+			echo ""
+			for VAR in "${SSL_ENV_FILE_VARS[@]}" ; do
+				if [ -v "${VAR}" ] ; then
+					echo "export ${VAR}=${!VAR@Q}"
+				else
+					UNDEF+=( "${VAR}" )
+					echo "# ${VAR} was undefined"
+				fi
+			done
+			echo ""
+			echo "#"
+			echo "# End of the SSL environment variable definitions"
+			echo "#"
+		} > "${SSL_ENV_FILE}"
+
+		[ ${#UNDEF[@]} -gt 0 ] && \
+			warn "The following variables were undefined [ ${UNDEF[@]} ]"
+
+		# Make sure everything is readable
+		chmod a+X "${DIR}"
+		chmod ugo=r "${SSL_ENV_FILE}"
 	}
 	trap finalize EXIT
 
@@ -862,10 +866,10 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 		err "Couldn't find the provisioner password file at [${ACME_PASSWORD_FILE}], did not generate any new certificates or keystores"
 	fi
 
-	doing "Updating the trusted certificates"
+	doing "Updating the trusted certificates..."
 	chown -R root:root "${OS_SSL_ANCHORS}"
-	chmod -R a=rwX "${OS_SSL_ANCHORS}"
-	( execute "${OS_SSL_UPDATE_CMD[@]}" ) || fail "Failed to update the CA trusts"
+	chmod -R u=rwX,go=rX "${OS_SSL_ANCHORS}"
+	OUT="$(execute "${OS_SSL_UPDATE_CMD[@]}" 2>&1)" || fail "Failed to update the CA trusts (rc=${?}): ${OUT}"
 	say "\t✅ CA trusts updated system-wide!"
 
 	#
@@ -876,12 +880,11 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 	# Also we only do this if we built a keystore ... if we didn't build one,
 	# we don't really care
 	#
-	if as_boolean "${KEYTOOL}" ; then
+	if as_boolean "${KEYTOOL}" && is_file "${JAVA_KEYSTORE}" ; then
 		doing "Adding the global trusts to the ${JAVA_KEYSTORE_TYPE} keystore!"
 		# TEST THIS IN FIPS!!
 		CMD=(
-			keytool
-				-importkeystore
+			keytool -importkeystore
 				-destkeystore "${JAVA_KEYSTORE}"
 				-deststorepass "$(<"${JAVA_KEYSTORE_PASSWORD_FILE}")"
 				-deststoretype "${JAVA_KEYSTORE_TYPE}"
