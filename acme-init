@@ -186,38 +186,6 @@ download_chain()
 	return ${RC}
 }
 
-add_global_trusts()
-{
-	local TYPE="${1}"
-	local KEYSTORE="${2}"
-	local PASSWORD="${3}"
-
-	as_boolean "${KEYTOOL}" || return 0
-
-	PASSWORD="$(<"${PASSWORD}")" || fail "Failed to read the password from the file [${PASSWORD}]"
-
-	local KEYTOOL_FLAGS=()
-	[ -n "${JAVA_KEYSTORE_PROVIDER}" ] && KEYTOOL_FLAGS+=(-providerclass "${JAVA_KEYSTORE_PROVIDER}")
-	[ -n "${JAVA_KEYSTORE_PROVIDER_ARGS}" ] && KEYTOOL_FLAGS+=(-providerarg "${JAVA_KEYSTORE_PROVIDER_ARGS}")
-	[ -n "${JAVA_KEYSTORE_PROVIDER_PATH}" ] && KEYTOOL_FLAGS+=(-providerpath "${JAVA_KEYSTORE_PROVIDER_PATH}")
-
-# Validate the URL
-[[ "${ACME_URL}" =~ ^http(s)?://([^:/]+)(:([1-9][0-9]*))?(/.*)?$ ]] || fail "Malformed URL for the ACME CA: [${ACME_URL}]"
-
-	doing "Adding the global trusts to the Java Keystore..."
-	# First off, add the trusts from the default CACERTS
-	keytool \
-		-importkeystore \
-		-srckeystore "${OS_SSL_CACERTS}" \
-		-srcstorepass "${JAVA_GLOBAL_TRUSTSTORE_PASSWORD}" \
-		-srcstoretype "${JAVA_GLOBAL_TRUSTSTORE_TYPE}" \
-		-destkeystore "${KEYSTORE}" \
-		-deststorepass "${PASSWORD}" \
-		-deststoretype "${TYPE}" \
-		"${KEYTOOL_FLAGS[@]}" \
-		< /dev/null || err "Could not append the global trusts (cacerts)"
-}
-
 expand_vars()
 {
 	echo -n "${@}" | envsubst
@@ -231,6 +199,8 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 {
 	flock -x 999 || fail "Failed to acquire the execution lock for SSL initialization"
 
+	mkdir -p "${SSL_DIR}" &>/dev/null
+
 	################################################################################
 	#
 	# If we've already computed all our stuff, 
@@ -242,8 +212,9 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 	# Make sure the environment file is created every time if we exit cleanly
 	#
 	RESULT_OK="false"
-	output_env()
+	finalize()
 	{
+		[ -v GARBAGE ] && shred -u "${GARBAGE[@]}" &>/dev/null
 		if as_boolean "${RESULT_OK}" ; then
 			local DIR="$(dirname "${SSL_ENV_FILE}")" 
 			mkdir -p "${DIR}"
@@ -279,7 +250,7 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 			chmod ugo=r "${SSL_ENV_FILE}"
 		fi
 	}
-	trap output_env EXIT
+	trap finalize EXIT
 
 	#
 	# Oh? Work to be done? Let's do some initial validations first ...
@@ -294,8 +265,7 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 	#
 	# Find the Java keytool, if it's installed
 	#
-	KEYTOOL="false"
-	type -P keytool &>/dev/null && KEYTOOL="true"
+	type -P keytool &>/dev/null && KEYTOOL="true" || KEYTOOL="false"
 
 	################################################################################
 	#
@@ -381,6 +351,10 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 			set_or_default JAVA_FIPS_KEYSTORE_PROVIDER "org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider"
 			set_or_default JAVA_FIPS_KEYSTORE_PROVIDER_PATH "${BC_PROV_JAR:-}"
 			set_or_default JAVA_FIPS_KEYSTORE_PROVIDER_ARGS
+
+			# TODO: Should we support paths as well? For now, no...
+			# TODO: do we want to validate if the class is present?
+			require_file_readable "${JAVA_KEYSTORE_PROVIDER_PATH}"
 
 			#
 			# The keystore is now FIPS-capable
@@ -558,11 +532,10 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 
 	################################################################################
 	#
-	# Download our new certificates from the ACME instance
+	# Generate our new certificates
 	#
 	################################################################################
 	set_or_default ACME_PASSWORD_FILE "/.acme.password"
-	set_as_boolean KEYSTORE_GENERATED "false"
 	if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 		################################################################################
 		#
@@ -579,13 +552,37 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 			say "\t✅ Done!"
 		fi
 
+		########################################
+		# Copy the CA's certs into the SSL_DIR
+		########################################
+		doing "Copying the root and intermediate CAs into the target directory..."
+		cp -f "${ACME_ROOT_CA_ANCHOR}" "${SSL_DIR}/ca-root.pem"
+		cp -f "${ACME_INT_CA_ANCHOR}" "${SSL_DIR}/ca-int.pem"
+		cat \
+			"${ACME_INT_CA_ANCHOR}" \
+			"${ACME_ROOT_CA_ANCHOR}" \
+			> "${SSL_DIR}/ca-chain.pem"
+		say "\t✅ Done!"
+
 		# This array will contain the list of (absolute) paths for all
 		# files whose ownership and permissions will be set to the most
 		# restrictive of all: only readable by the owner
 		SECURE_FILES=()
 
+		# This helps us do cleanup on exit
+		GARBAGE=()
+
+		################################################################################
+		#
+		# Compute all the values to be added to the certificate's SAN
+		#
+		################################################################################
 		FQDN="$(hostname -f)"
 		IFS="." read POD SERVICE NAMESPACE SVC CLUSTER_DOMAIN <<< "${FQDN}"
+
+		set_or_default SSL_EXTRA_SAN
+		set_as_boolean SSL_EXTRA_SAN_STRICT
+		set_or_default SSL_SERVICE_EXTRA_NAMES
 
 		VARIATIONS=( "${NAMESPACE}" "${SVC}" "${CLUSTER_DOMAIN}" )
 
@@ -623,10 +620,6 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 			"localhost"
 		)
 
-		set_or_default SSL_EXTRA_SAN
-		set_as_boolean SSL_EXTRA_SAN_STRICT
-		set_or_default SSL_SERVICE_EXTRA_NAMES
-
 		# Add the extra SAN names, if provided. The list can be separated by spaces, commas, or colons
 		while read S ; do
 			if is_valid_ipv4 "${S}" || is_valid_hostname "${S}" ; then
@@ -640,6 +633,11 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 
 		ensure_dir "${SSL_DIR}"
 
+		################################################################################
+		#
+		# Generate the key's password file
+		#
+		################################################################################
 		if [ -v ACME_KEYSTORE_PASSWORD_FILE ] ; then
 			[ -n "${ACME_KEYSTORE_PASSWORD_FILE}" ] || fail "The variable ACME_KEYSTORE_PASSWORD_FILE may not be empty"
 			[ -s "${ACME_KEYSTORE_PASSWORD_FILE}" ] || fail "The password file [${ACME_KEYSTORE_PASSWORD_FILE}] may not be empty"
@@ -659,89 +657,15 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 				render_password > "${ACME_KEYSTORE_PASSWORD_FILE}" || fail "Failed to render a new password into [${ACME_KEYSTORE_PASSWORD_FILE}]"
 			fi
 		fi
+
 		export ACME_KEYSTORE_PASSWORD="$(<"${ACME_KEYSTORE_PASSWORD_FILE}")"
-
-		# Make sure our SAN list is unique, and
-		# sorted, and pre-pend the --san argument
-		SAN_ARG=()
-		[ "${#SAN[@]}" -gt 0 ] && doing "Rendering certificate for the following SANs:"
-		while read S ; do
-			say "\t${S}"
-			SAN_ARG+=(--san "${S}")
-		done < <(echo "${SAN[@]}" | tr '[:space:]' '\n' | sed -e '/^\s*$/d' | sort -u)
-
-		# Note: the not-before is "back in time" to accommodate for clock skew. We've
-		# observed that when there's a bit of clock skew, certificate issuance goes
-		# kind of wonky b/c the cert will be OK, but it will not be accepted by the
-		# consuming processes until the not-before time has past. By using a back-in-time
-		# approach we ensure that the certificate will always be "born ready"
-		doing "Rendering a new certificate for this pod's use"
-		step ca certificate \
-			"${FQDN}" "${SSL_DIR}/cert.pem" "${SSL_DIR}/cert.key" \
-			"${SAN_ARG[@]}" \
-			--force \
-			--not-before="-1h30m" \
-			--size 2048 \
-			--kty RSA \
-			--provisioner-password-file "${ACME_PASSWORD_FILE}" \
-			--password-file="${ACME_KEYSTORE_PASSWORD_FILE}"
-		doing "Removing extra stuff from the certificate..."
-		sed -i -e '/^-\+END CERTIFICATE-\+$/q' "${SSL_DIR}/cert.pem"
-		say "\t✅ Certificate ready!"
-
-		set_as_boolean SSL_DH_APPEND "false"
-		if as_boolean "${SSL_DH_APPEND}" ; then
-			set_or_default SSL_DH_SIZE "1024"
-			doing "Rendering the Diffie-Hellman parameters..."
-			OUT="$(openssl dhparam -outform pem -out "${SSL_DIR}/dh.pem" "${SSL_DH_SIZE}" 2>&1)"  || fail "Failed to generate the DH parameters (rc=${?}): ${OUT}"
-			doing "Appending Diffie-Hellman parameters to the certificate"
-			( echo "" ; cat "${SSL_DIR}/dh.pem" ) >> "${SSL_DIR}/cert.pem" || fail "Failed to append the DH parameters to the certifiate"
-			say "\tDH parameters appended!"
-		fi
-
-		SECURE_FILES+=("${SSL_DIR}/cert.key")
-
-		doing "Creating a AES (PKCS8) encrypted version of the key..."
-		openssl pkcs8 -topk8 \
-			-nocrypt \
-			-in "${SSL_DIR}/cert.key" \
-			-out "${SSL_DIR}/cert.key.aes" \
-			-v2 aes-256-cbc \
-			-passout env:ACME_KEYSTORE_PASSWORD \
-			&& say "\t✅ AES-256 (PKCS8) Encrypted key ready!" \
-			|| warn "Failed to create the AES-256 (PKCS8) Encrypted certificate key"
-
-		if ! as_boolean "${FIPS}" ; then
-			doing "Creating an RSA encrypted version of the key..."
-			openssl rsa -aes256 \
-				-in "${SSL_DIR}/cert.key" \
-				-out "${SSL_DIR}/cert.key.rsa" \
-				-passout env:ACME_KEYSTORE_PASSWORD \
-				&& say "\t✅ RSA Encrypted key ready!" \
-				|| warn "Failed to create the RSA Encrypted certificate key"
-		fi
-
-		doing "Copying the root and intermediate CAs into the target directory..."
-		cp -f "${ACME_ROOT_CA_ANCHOR}" "${SSL_DIR}/ca-root.pem"
-		cp -f "${ACME_INT_CA_ANCHOR}" "${SSL_DIR}/ca-int.pem"
-		cat \
-			"${ACME_INT_CA_ANCHOR}" \
-			"${ACME_ROOT_CA_ANCHOR}" \
-			> "${SSL_DIR}/ca-chain.pem"
-		say "\t✅ Done!"
-
 		SECURE_FILES+=("${ACME_KEYSTORE_PASSWORD_FILE}")
 
-		doing "Rendering the certificate files for HAProxy..."
-		cat \
-			"${SSL_DIR}/cert.pem" \
-			"${SSL_DIR}/ca-chain.pem" \
-			"${SSL_DIR}/cert.key" \
-			> "${SSL_DIR}/haproxy-cert.pem"
-		SECURE_FILES+=("${SSL_DIR}/haproxy-cert.pem")
-
-		say "\t✅ Done!"
-
+		################################################################################
+		#
+		# Render the certificate (different if Java is used vs. not)
+		#
+		################################################################################
 		if as_boolean "${KEYTOOL}" ; then
 			doing "Rendering a ${JAVA_KEYSTORE_TYPE} Keystore with the new certificate & key..."
 
@@ -755,22 +679,166 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 			set_or_default PKCS12_KEY_PBE "${DEFAULT_PBE}"
 			set_or_default PKCS12_CERT_PBE "${DEFAULT_PBE}"
 
+			# Are these necessary?
 			PKCS12_FLAGS=()
 			[ -n "${PKCS12_KEY_PBE}" ] && PKCS12_FLAGS+=(-keypbe "${PKCS12_KEY_PBE}")
 			[ -n "${PKCS12_CERT_PBE}" ] && PKCS12_FLAGS+=(-certpbe "${PKCS12_CERT_PBE}")
 
-			openssl pkcs12 \
-				-export \
-				-in "${SSL_DIR}/cert.pem" \
-				-inkey "${SSL_DIR}/cert.key" \
-				-passin env:JAVA_KEYSTORE_PASSWORD \
-				-name "${JAVA_KEY_ALIAS}" \
-				-out "${JAVA_KEYSTORE}" \
-				"${PKCS12_FLAGS[@]}" \
-				-passout env:JAVA_KEYSTORE_PASSWORD
-			say "\t✅ Ready!"
-			KEYSTORE_GENERATED="true"
+			export KEYTOOL_PROVIDER_FLAGS=()
+			if [ -n "${JAVA_KEYSTORE_PROVIDER}" ] ; then
+				KEYTOOL_PROVIDER_FLAGS+=(-providerclass "${JAVA_KEYSTORE_PROVIDER}")
+				[ -n "${JAVA_KEYSTORE_PROVIDER_ARGS}" ] && KEYTOOL_PROVIDER_FLAGS+=(-providerarg "${JAVA_KEYSTORE_PROVIDER_ARGS}")
+			fi
+			[ -n "${JAVA_KEYSTORE_PROVIDER_PATH}" ] && KEYTOOL_PROVIDER_FLAGS+=(-providerpath "${JAVA_KEYSTORE_PROVIDER_PATH}")
+
+			KT_SAN=""
+			[ "${#SAN[@]}" -gt 0 ] && doing "Rendering certificate for the following SANs:"
+			while read S ; do
+				say "\t${S}"
+				is_valid_ipv4 "${S}" && TYPE="ip" || TYPE="dns"
+				[ -n "${KT_SAN}" ] && KT_SAN+=","
+				KT_SAN+="${TYPE}:${S}"
+			done < <(echo "${SAN[@]}" | tr '[:space:]' '\n' | sed -e '/^\s*$/d' | sort -u)
+			[ -n "${KT_SAN}" ] && KT_SAN=(-ext "san=${KT_SAN}") || KT_SAN=()
+
+			# First, generate the certificate key
+			doing "Generating the certificate key..."
+			CMD=(
+				keytool -genkey
+					-alias "${JAVA_KEY_ALIAS}"
+					-dname "CN=${FQDN}"
+					-keyalg RSA
+					-keypass "$(<"${JAVA_KEYSTORE_PASSWORD_FILE}")"
+					-keysize 2048
+					-keystore "${JAVA_KEYSTORE}"
+					-storetype "${JAVA_KEYSTORE_TYPE}"
+					-storepass "$(<"${JAVA_KEYSTORE_PASSWORD_FILE}")"
+					-startdate "-90m"
+					-validity 548
+					"${KT_SAN[@]}"
+					"${KEYTOOL_PROVIDER_FLAGS[@]}"
+			)
+			OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to generate the ${JAVA_KEYSTORE_TYPE} keystore (rc=${?}): ${OUT}"
+			ok "The key is ready!"
+
+			# Generate the CSR
+			doing "Generating the certificate signing request..."
+			CSR="$(mktemp --tmpdir="${SSL_DIR}" .csr.XXXXXXXX)" || fail "Failed to create a temporary CSR file"
+			GARBAGE+=( "${CSR}" )
+			CMD=(
+				keytool -certreq
+					-alias "${JAVA_KEY_ALIAS}"
+					-file "${CSR}"
+					-keystore "${JAVA_KEYSTORE}"
+					-keypass "$(<"${JAVA_KEYSTORE_PASSWORD_FILE}")"
+					-storetype "${JAVA_KEYSTORE_TYPE}"
+					-storepass "$(<"${JAVA_KEYSTORE_PASSWORD_FILE}")"
+					"${KT_SAN[@]}"
+					"${KEYTOOL_PROVIDER_FLAGS[@]}"
+			)
+			OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to generate the CSR (rc=${?}): ${OUT}"
+			ok "The request is ready!"
+
+			# Get the CSR signed
+			CERT="${SSL_DIR}/cert.pem"
+			doing "Submitting the certificate signing request..."
+			step ca sign "${CSR}" "${CERT}" \
+				--not-before="-1h30m" \
+				--provisioner-password-file "${ACME_PASSWORD_FILE}" \
+				--password-file="${ACME_KEYSTORE_PASSWORD_FILE}" || fail "Failed to get the certificate signature"
+			ok "The certificate was signed!"
+			GARBAGE+=( "${CERT}" )
+
+			doing "Importing the root siginig CA into the keystore..."
+			CMD=(
+				keytool -import
+					-file "${SSL_DIR}/ca-root.pem"
+					-keystore "${JAVA_KEYSTORE}"
+					-noprompt
+					-storetype "${JAVA_KEYSTORE_TYPE}"
+					-storepass "$(<"${JAVA_KEYSTORE_PASSWORD_FILE}")"
+					"${KEYTOOL_PROVIDER_FLAGS[@]}"
+			)
+			OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to import the root signing CA into the keystore (rc=${?}): ${OUT}"
+			ok "The root CA was imported!"
+
+			# doing "Removing extra stuff from the certificate..."
+			# sed -i -e '/^-\+END CERTIFICATE-\+$/q' "${CERT}"
+			doing "Importing the signed certificate into the keystore..."
+			CMD=(
+				keytool -import
+					-alias "${JAVA_KEY_ALIAS}"
+					-file "${CERT}"
+					-keystore "${JAVA_KEYSTORE}"
+					-noprompt
+					-storetype "${JAVA_KEYSTORE_TYPE}"
+					-storepass "$(<"${JAVA_KEYSTORE_PASSWORD_FILE}")"
+					"${KEYTOOL_PROVIDER_FLAGS[@]}"
+			)
+			OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to import the signed certificate into the keystore (rc=${?}): ${OUT}"
+			say "\t✅ The keystore is ready!"
+		else
+			########################################
+			# No Java, use OpenSSL only
+			########################################
+			# Make sure our SAN list is unique, and
+			# sorted, and pre-pend the --san argument
+			SAN_ARG=()
+			[ "${#SAN[@]}" -gt 0 ] && doing "Rendering certificate for the following SANs:"
+			while read S ; do
+				say "\t${S}"
+				SAN_ARG+=(--san "${S}")
+			done < <(echo "${SAN[@]}" | tr '[:space:]' '\n' | sed -e '/^\s*$/d' | sort -u)
+
+			# Note: the not-before is "back in time" to accommodate for clock skew. We've
+			# observed that when there's a bit of clock skew, certificate issuance goes
+			# kind of wonky b/c the cert will be OK, but it will not be accepted by the
+			# consuming processes until the not-before time has past. By using a back-in-time
+			# approach we ensure that the certificate will always be "born ready"
+			doing "Rendering a new certificate for this pod's use"
+			step ca certificate \
+				"${FQDN}" "${SSL_DIR}/cert.pem" "${SSL_DIR}/cert.key" \
+				"${SAN_ARG[@]}" \
+				--force \
+				--not-before="-1h30m" \
+				--size 2048 \
+				--kty RSA \
+				--provisioner-password-file "${ACME_PASSWORD_FILE}" \
+				--password-file="${ACME_KEYSTORE_PASSWORD_FILE}"
+			doing "Removing extra stuff from the certificate..."
+			sed -i -e '/^-\+END CERTIFICATE-\+$/q' "${SSL_DIR}/cert.pem"
+			say "\t✅ Certificate ready!"
+
+			set_as_boolean SSL_DH_APPEND "false"
+			if as_boolean "${SSL_DH_APPEND}" ; then
+				set_or_default SSL_DH_SIZE "1024"
+				doing "Rendering the Diffie-Hellman parameters..."
+				OUT="$(openssl dhparam -outform pem -out "${SSL_DIR}/dh.pem" "${SSL_DH_SIZE}" 2>&1)"  || fail "Failed to generate the DH parameters (rc=${?}): ${OUT}"
+				doing "Appending Diffie-Hellman parameters to the certificate"
+				( echo "" ; cat "${SSL_DIR}/dh.pem" ) >> "${SSL_DIR}/cert.pem" || fail "Failed to append the DH parameters to the certifiate"
+				say "\tDH parameters appended!"
+			fi
+			SECURE_FILES+=("${SSL_DIR}/cert.key")
+
+			doing "Creating a AES (PKCS8) encrypted version of the key..."
+			openssl pkcs8 -topk8 \
+				-nocrypt \
+				-in "${SSL_DIR}/cert.key" \
+				-out "${SSL_DIR}/cert.key.aes" \
+				-v2 aes-256-cbc \
+				-passout env:ACME_KEYSTORE_PASSWORD \
+				&& say "\t✅ AES-256 (PKCS8) Encrypted key ready!" \
+				|| warn "Failed to create the AES-256 (PKCS8) Encrypted certificate key"
+
+			doing "Rendering the certificate files for HAProxy..."
+			cat \
+				"${SSL_DIR}/cert.pem" \
+				"${SSL_DIR}/ca-chain.pem" \
+				"${SSL_DIR}/cert.key" \
+				> "${SSL_DIR}/haproxy-cert.pem"
+			SECURE_FILES+=("${SSL_DIR}/haproxy-cert.pem")
 		fi
+		say "\t✅ Done!"
 
 		doing "Setting tight permissions for the generated data..."
 
@@ -808,10 +876,24 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 	# Also we only do this if we built a keystore ... if we didn't build one,
 	# we don't really care
 	#
-	if as_boolean "${KEYTOOL}" && as_boolean "${KEYSTORE_GENERATED}" ; then
+	if as_boolean "${KEYTOOL}" ; then
 		doing "Adding the global trusts to the ${JAVA_KEYSTORE_TYPE} keystore!"
-		add_global_trusts "${JAVA_KEYSTORE_TYPE}" "${JAVA_KEYSTORE}" "${JAVA_KEYSTORE_PASSWORD_FILE}" || fail "Failed to add the global trusts to the keystore!"
-		say "\t✅ Global trusts added!"
+		# TEST THIS IN FIPS!!
+		CMD=(
+			keytool
+				-importkeystore
+				-destkeystore "${JAVA_KEYSTORE}"
+				-deststorepass "$(<"${JAVA_KEYSTORE_PASSWORD_FILE}")"
+				-deststoretype "${JAVA_KEYSTORE_TYPE}"
+				-noprompt
+				-srckeystore "${JAVA_GLOBAL_TRUSTSTORE}"
+				-srcstorepass "${JAVA_GLOBAL_TRUSTSTORE_PASSWORD}"
+				-srcstoretype "${JAVA_GLOBAL_TRUSTSTORE_TYPE}"
+				"${KEYTOOL_PROVIDER_FLAGS[@]}"
+		)
+		OUT="$("${CMD[@]}" 2>&1)" \
+			&& say "\t✅ Global trusts added!" \
+			|| err "Could not append the global trusts from [${JAVA_GLOBAL_TRUSTSTORE}] (rc=${?}): ${OUT}"
 
 		#
 		# Add the Java variables to the environment file
