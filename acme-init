@@ -332,7 +332,6 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 			-Djavax.net.ssl.keyStorePasswordFile='${JAVA_KEYSTORE_PASSWORD_FILE}'
 			-Djavax.net.ssl.keyStorePassword='${JAVA_KEYSTORE_PASSWORD}'
 			-Djavax.net.ssl.keyStoreType='${JAVA_KEYSTORE_TYPE}'
-			-Djavax.net.ssl.keyStoreProvider='${JAVA_KEYSTORE_PROVIDER}'
 
 			-Djavax.net.ssl.keyAlias='${JAVA_KEY_ALIAS}'
 			-Djavax.net.ssl.keyPasswordFile='${JAVA_KEY_PASSWORD_FILE}'
@@ -342,7 +341,6 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 			-Djavax.net.ssl.trustStorePasswordFile='${JAVA_TRUSTSTORE_PASSWORD_FILE}'
 			-Djavax.net.ssl.trustStorePassword='${JAVA_TRUSTSTORE_PASSWORD}'
 			-Djavax.net.ssl.trustStoreType='${JAVA_TRUSTSTORE_TYPE}'
-			-Djavax.net.ssl.trustStoreProvider='${JAVA_TRUSTSTORE_PROVIDER}'
 		)
 
 		#
@@ -350,8 +348,7 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 		#
 		if is_fips ; then
 
-
-			set_or_default JAVA_FIPS_KEYSTORE_TYPE "BCPKCS12"
+			set_or_default JAVA_FIPS_KEYSTORE_TYPE "BCFKS"
 			set_or_default JAVA_FIPS_KEYSTORE_PROVIDER "org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider"
 			set_or_default JAVA_FIPS_KEYSTORE_PROVIDER_PATH "${BC_PROV_JAR:-}"
 			set_or_default JAVA_FIPS_KEYSTORE_PROVIDER_ARGS
@@ -381,6 +378,10 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 				-Dssl.TrustManagerFactory.algorithm="PKIX"
 			)
 		fi
+
+		# Add these two last, in case there's no reason to add them
+		[ -n "${JAVA_KEYSTORE_PROVIDER}" ] && JAVAX_NET_SSL_OPTS+=( -Djavax.net.ssl.keyStoreProvider="${JAVA_KEYSTORE_PROVIDER}" )
+		[ -n "${JAVA_TRUSTSTORE_PROVIDER}" ] && JAVAX_NET_SSL_OPTS+=( -Djavax.net.ssl.trustStoreProvider="${JAVA_TRUSTSTORE_PROVIDER}" )
 
 		#
 		# We name the stores last so we use the correct extension
