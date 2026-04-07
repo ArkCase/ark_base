@@ -186,6 +186,52 @@ download_chain()
 	return ${RC}
 }
 
+split_signed_cert()
+{
+	local SRC="${1}"
+	local CERT="${2}"
+	local CHAIN="${3:-}"
+	local ROOT="${4:-}"
+	local INT="${5:-}"
+
+	local OUT=""
+	doing "Extracting the certificate from the signed bundle..."
+	if [ $(grep -c -- "-----END CERTIFICATE-----" "${SRC}") -le 1 ] ; then
+		#
+		# No bundle ... just the certificate!
+		#
+		OUT="$(cp -vf "${SRC}" "${CERT}" 2>&1)" || fail "Failed to deploy the downloaded certificate (rc=${?}): ${OUT}"
+
+		if [ -n "${CHAIN}" ] && [ -n "${ROOT}" ] ; then
+			cat "${SSL_DIR}/ca-root.pem" > "${SSL_DIR}/ca-chain.pem" || fail "Failed to generate the certificate signing chain (rc=${?})"
+			say "\t✅ Chain ready!"
+		fi
+		say "\t✅ Certificate ready!"
+		return 0
+	fi
+
+	#
+	# Signed bundle! Split it!
+	#
+	doing "Splitting the signed bundle..."
+	if [ -n "${INT}" ] ; then
+		sed -e '0,/-----END CERTIFICATE-----/d' < "${SRC}" > "${INT}" || fail "Failed to extract the intermediate CAs from the signed bundle (rc=${?})"
+		say "\t✅ Intermediates ready!"
+	fi
+
+	if [ -n "${CHAIN}" ] && [ -n "${ROOT}${INT}" ] ; then
+		(
+			[ -n "${INT}" ] && cat "${INT}"
+			[ -n "${ROOT}" ] && cat "${ROOT}"
+		) > "${CHAIN}" || fail "Failed to generate the certificate signing chain (rc=${?})"
+		say "\t✅ Chain ready!"
+	fi
+
+	sed -e '/-----END CERTIFICATE-----/q' < "${SRC}" > "${CERT}" || fail "Failed to extract the certificate from the signed bundle (rc=${?})"
+	say "\t✅ Certificate ready!"
+	return 0
+}
+
 expand_vars()
 {
 	echo -n "${@}" | envsubst
@@ -299,99 +345,6 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 
 	################################################################################
 	#
-	# If we're doing the Java thing, then set up all the Java stuff
-	#
-	################################################################################
-	if as_boolean "${KEYTOOL}" ; then
-
-		#
-		# Define all the Java-related variables
-		#
-		export JAVA_KEYSTORE_PASSWORD_FILE=""
-		export JAVA_KEYSTORE_TYPE="PKCS12"
-		export JAVA_KEYSTORE_PROVIDER=""
-		export JAVA_KEYSTORE_PROVIDER_PATH=""
-		export JAVA_KEYSTORE_PROVIDER_ARGS=""
-
-		export JAVA_KEY_ALIAS="acme"
-		export JAVA_KEY_PASSWORD_FILE=""
-		export JAVA_KEY_PASSWORD=""
-
-		export JAVA_TRUSTSTORE_PASSWORD_FILE=""
-		export JAVA_TRUSTSTORE_TYPE="${JAVA_KEYSTORE_TYPE}"
-		export JAVA_TRUSTSTORE_PROVIDER=""
-		export JAVA_TRUSTSTORE_PROVIDER_PATH=""
-		export JAVA_TRUSTSTORE_PROVIDER_ARGS=""
-
-		export JAVA_GLOBAL_TRUSTSTORE="${OS_SSL_CACERTS}"
-		export JAVA_GLOBAL_TRUSTSTORE_TYPE="JKS"
-		export JAVA_GLOBAL_TRUSTSTORE_PASSWORD="changeit"
-
-		JAVAX_NET_SSL_OPTS=(
-			-Djavax.net.ssl.keyStore='${JAVA_KEYSTORE}'
-			-Djavax.net.ssl.keyStorePasswordFile='${JAVA_KEYSTORE_PASSWORD_FILE}'
-			-Djavax.net.ssl.keyStorePassword='${JAVA_KEYSTORE_PASSWORD}'
-			-Djavax.net.ssl.keyStoreType='${JAVA_KEYSTORE_TYPE}'
-
-			-Djavax.net.ssl.keyAlias='${JAVA_KEY_ALIAS}'
-			-Djavax.net.ssl.keyPasswordFile='${JAVA_KEY_PASSWORD_FILE}'
-			-Djavax.net.ssl.keyPassword='${JAVA_KEY_PASSWORD}'
-
-			-Djavax.net.ssl.trustStore='${JAVA_TRUSTSTORE}'
-			-Djavax.net.ssl.trustStorePasswordFile='${JAVA_TRUSTSTORE_PASSWORD_FILE}'
-			-Djavax.net.ssl.trustStorePassword='${JAVA_TRUSTSTORE_PASSWORD}'
-			-Djavax.net.ssl.trustStoreType='${JAVA_TRUSTSTORE_TYPE}'
-		)
-
-		#
-		# Apply the FIPS adjustments
-		#
-		if is_fips ; then
-
-			set_or_default JAVA_FIPS_KEYSTORE_TYPE "BCFKS"
-			set_or_default JAVA_FIPS_KEYSTORE_PROVIDER "org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider"
-			set_or_default JAVA_FIPS_KEYSTORE_PROVIDER_PATH "${BC_PROV_JAR:-}"
-			set_or_default JAVA_FIPS_KEYSTORE_PROVIDER_ARGS
-
-			# TODO: Should we support paths as well? For now, no...
-			# TODO: do we want to validate if the class is present?
-			require_file_readable "${JAVA_FIPS_KEYSTORE_PROVIDER_PATH}"
-
-			#
-			# The keystore is now FIPS-capable
-			#
-			JAVA_KEYSTORE_TYPE="${JAVA_FIPS_KEYSTORE_TYPE}"
-			JAVA_KEYSTORE_PROVIDER="${JAVA_FIPS_KEYSTORE_PROVIDER}"
-			JAVA_KEYSTORE_PROVIDER_PATH="${JAVA_FIPS_KEYSTORE_PROVIDER_PATH}"
-			JAVA_KEYSTORE_PROVIDER_ARGS="${JAVA_FIPS_KEYSTORE_PROVIDER_ARGS}"
-
-			#
-			# The FIPS keystore becomes the truststore
-			#
-			JAVA_TRUSTSTORE_TYPE="${JAVA_KEYSTORE_TYPE}"
-			JAVA_TRUSTSTORE_PROVIDER="${JAVA_KEYSTORE_PROVIDER}"
-			JAVA_TRUSTSTORE_PROVIDER_PATH="${JAVA_KEYSTORE_PROVIDER_PATH}"
-			JAVA_TRUSTSTORE_PROVIDER_ARGS="${JAVA_KEYSTORE_PROVIDER_ARGS}"
-
-			JAVAX_NET_SSL_OPTS+=(
-				-Dssl.KeyManagerFactory.algorithm="PKIX"
-				-Dssl.TrustManagerFactory.algorithm="PKIX"
-			)
-		fi
-
-		# Add these two last, in case there's no reason to add them
-		[ -n "${JAVA_KEYSTORE_PROVIDER}" ] && JAVAX_NET_SSL_OPTS+=( -Djavax.net.ssl.keyStoreProvider="${JAVA_KEYSTORE_PROVIDER}" )
-		[ -n "${JAVA_TRUSTSTORE_PROVIDER}" ] && JAVAX_NET_SSL_OPTS+=( -Djavax.net.ssl.trustStoreProvider="${JAVA_TRUSTSTORE_PROVIDER}" )
-
-		#
-		# We name the stores last so we use the correct extension
-		#
-		export JAVA_KEYSTORE="${SSL_DIR}/keystore.${JAVA_KEYSTORE_TYPE,,}"
-		export JAVA_TRUSTSTORE="${JAVA_KEYSTORE}"
-	fi
-
-	################################################################################
-	#
 	# Ok ... start doing the work!
 	#
 	################################################################################
@@ -417,8 +370,6 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 
 	ACME_ROOT_CA_BASENAME="ca-root"
 	ACME_ROOT_CA_ANCHOR="${OS_SSL_ANCHORS}/${ACME_ROOT_CA_BASENAME}.${OS_SSL_SUFFIX}"
-	ACME_INT_CA_BASENAME="ca-int"
-	ACME_INT_CA_ANCHOR="${OS_SSL_ANCHORS}/${ACME_INT_CA_BASENAME}.${OS_SSL_SUFFIX}"
 
 	#
 	# Ok ... start working our magic!
@@ -444,22 +395,27 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 	done
 	say "\t✅ Fetch OK!"
 
-	# Fetch the intermediate CA as well
-	# TODO: What's the standard way to do this in ACME-land?
-	doing "Fetching the intermediate CA certificate from [${ACME_HOST}]"
-	(
-		set -euo pipefail
-		D="$(mktemp -d)"
-		cd "${D}"
-		INT_FILE="xx02"
-		csplit <(openssl s_client -connect "${ACME_HOST}:${ACME_PORT}" -showcerts </dev/null 2>/dev/null) \
-			'/BEGIN CERTIFICATE/' '{*}' &>/dev/null
-		sed -i -e '/^-\+END CERTIFICATE-\+$/q' "${INT_FILE}"
-		mv -f "${INT_FILE}" "${ACME_INT_CA_ANCHOR}"
-		cd /
-		rm -rf "${D}" || true
-	) || fail "Failed to fetch the intermediate CA from [${ACME_URL}]"
-	say "\t✅ Fetch OK!"
+	################################################################################
+	#
+	# Initialize the ACME client
+	#
+	################################################################################
+	if step ca health &>/dev/null ; then
+		ok "Step CA client already initialized!"
+	else
+		doing "Initializing the Step CA Acme Client"
+		step ca bootstrap -f \
+			--ca-url "${ACME_URL}" \
+			--fingerprint "$(step certificate fingerprint "${ACME_ROOT_CA_ANCHOR}")"
+		say "\t✅ Done!"
+	fi
+
+	########################################
+	# Copy the CA's certs into the SSL_DIR
+	########################################
+	doing "Copying the root CA into the target directory..."
+	cp -f "${ACME_ROOT_CA_ANCHOR}" "${SSL_DIR}/ca-root.pem"
+	say "\t✅ Done!"
 
 	################################################################################
 	#
@@ -537,38 +493,128 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 
 	################################################################################
 	#
+	# Generate the key's password file
+	#
+	################################################################################
+	if [ -v ACME_KEYSTORE_PASSWORD_FILE ] ; then
+		[ -n "${ACME_KEYSTORE_PASSWORD_FILE}" ] || fail "The variable ACME_KEYSTORE_PASSWORD_FILE may not be empty"
+		[ -s "${ACME_KEYSTORE_PASSWORD_FILE}" ] || fail "The password file [${ACME_KEYSTORE_PASSWORD_FILE}] may not be empty"
+	else
+		# We weren't given a password file to use, so use the default value
+		ACME_KEYSTORE_PASSWORD_FILE="${SSL_DIR}/.password"
+
+		# Allow the use of ACME_KEYSTORE_PASSWORD to set the password. This isn't
+		# particularly secure, but it may be required in some instances where the
+		# pod needs to know the password beforehand (i.e. b/c Helm needs to know it)
+		if [ -v ACME_KEYSTORE_PASSWORD ] ; then
+			[ -n "${ACME_KEYSTORE_PASSWORD}" ] || fail "The variable ACME_KEYSTORE_PASSWORD may not be empty"
+			echo -n "${ACME_KEYSTORE_PASSWORD}" > "${ACME_KEYSTORE_PASSWORD_FILE}" || fail "Failed to render the password file at [${ACME_KEYSTORE_PASSWORD_FILE}] with the password given in ACME_KEYSTORE_PASSWORD"
+		else
+			# We weren't given a password, so just render a random one
+			render_password > "${ACME_KEYSTORE_PASSWORD_FILE}" || fail "Failed to render a new password into [${ACME_KEYSTORE_PASSWORD_FILE}]"
+		fi
+	fi
+
+	export ACME_KEYSTORE_PASSWORD="$(<"${ACME_KEYSTORE_PASSWORD_FILE}")"
+	SECURE_FILES+=("${ACME_KEYSTORE_PASSWORD_FILE}")
+
+	################################################################################
+	#
+	# If we're doing the Java thing, then set up all the Java stuff
+	#
+	################################################################################
+	if as_boolean "${KEYTOOL}" ; then
+		#
+		# Define all the Java-related variables
+		#
+		export JAVA_KEYSTORE_PASSWORD="${ACME_KEYSTORE_PASSWORD}"
+		export JAVA_KEYSTORE_PASSWORD_FILE="${ACME_KEYSTORE_PASSWORD_FILE}"
+		export JAVA_KEYSTORE_TYPE="PKCS12"
+		export JAVA_KEYSTORE_PROVIDER=""
+		export JAVA_KEYSTORE_PROVIDER_PATH=""
+		export JAVA_KEYSTORE_PROVIDER_ARGS=""
+
+		export JAVA_TRUSTSTORE_PASSWORD="${JAVA_KEYSTORE_PASSWORD}"
+		export JAVA_TRUSTSTORE_PASSWORD_FILE="${JAVA_KEYSTORE_PASSWORD_FILE}"
+		export JAVA_TRUSTSTORE_TYPE="${JAVA_KEYSTORE_TYPE}"
+		export JAVA_TRUSTSTORE_PROVIDER=""
+		export JAVA_TRUSTSTORE_PROVIDER_PATH=""
+		export JAVA_TRUSTSTORE_PROVIDER_ARGS=""
+
+		export JAVA_GLOBAL_TRUSTSTORE="${OS_SSL_CACERTS}"
+		export JAVA_GLOBAL_TRUSTSTORE_TYPE="JKS"
+		export JAVA_GLOBAL_TRUSTSTORE_PASSWORD="changeit"
+
+		JAVAX_NET_SSL_OPTS=(
+			-Djavax.net.ssl.keyStore='${JAVA_KEYSTORE}'
+			-Djavax.net.ssl.keyStorePasswordFile='${JAVA_KEYSTORE_PASSWORD_FILE}'
+			-Djavax.net.ssl.keyStorePassword='${JAVA_KEYSTORE_PASSWORD}'
+			-Djavax.net.ssl.keyStoreType='${JAVA_KEYSTORE_TYPE}'
+
+			-Djavax.net.ssl.trustStore='${JAVA_TRUSTSTORE}'
+			-Djavax.net.ssl.trustStorePasswordFile='${JAVA_TRUSTSTORE_PASSWORD_FILE}'
+			-Djavax.net.ssl.trustStorePassword='${JAVA_TRUSTSTORE_PASSWORD}'
+			-Djavax.net.ssl.trustStoreType='${JAVA_TRUSTSTORE_TYPE}'
+		)
+
+		#
+		# Apply the FIPS adjustments
+		#
+		if is_fips ; then
+
+			set_or_default JAVA_FIPS_KEYSTORE_TYPE "BCFKS"
+			set_or_default JAVA_FIPS_KEYSTORE_PROVIDER "org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider"
+			set_or_default JAVA_FIPS_KEYSTORE_PROVIDER_PATH "${BC_PROV_JAR:-}"
+			set_or_default JAVA_FIPS_KEYSTORE_PROVIDER_ARGS
+
+			# TODO: Should we support paths as well? For now, no...
+			# TODO: do we want to validate if the class is present?
+			require_file_readable "${JAVA_FIPS_KEYSTORE_PROVIDER_PATH}"
+
+			#
+			# The keystore is now FIPS-capable
+			#
+			JAVA_KEYSTORE_TYPE="${JAVA_FIPS_KEYSTORE_TYPE}"
+			JAVA_KEYSTORE_PROVIDER="${JAVA_FIPS_KEYSTORE_PROVIDER}"
+			JAVA_KEYSTORE_PROVIDER_PATH="${JAVA_FIPS_KEYSTORE_PROVIDER_PATH}"
+			JAVA_KEYSTORE_PROVIDER_ARGS="${JAVA_FIPS_KEYSTORE_PROVIDER_ARGS}"
+
+			#
+			# The FIPS keystore becomes the truststore
+			#
+			JAVA_TRUSTSTORE_TYPE="${JAVA_KEYSTORE_TYPE}"
+			JAVA_TRUSTSTORE_PROVIDER="${JAVA_KEYSTORE_PROVIDER}"
+			JAVA_TRUSTSTORE_PROVIDER_PATH="${JAVA_KEYSTORE_PROVIDER_PATH}"
+			JAVA_TRUSTSTORE_PROVIDER_ARGS="${JAVA_KEYSTORE_PROVIDER_ARGS}"
+
+			JAVAX_NET_SSL_OPTS+=(
+				-Dssl.KeyManagerFactory.algorithm="PKIX"
+				-Dssl.TrustManagerFactory.algorithm="PKIX"
+			)
+		fi
+
+		export KEYTOOL_PROVIDER_FLAGS=()
+		if [ -n "${JAVA_KEYSTORE_PROVIDER}" ] ; then
+			KEYTOOL_PROVIDER_FLAGS+=(-providerclass "${JAVA_KEYSTORE_PROVIDER}")
+			[ -n "${JAVA_KEYSTORE_PROVIDER_ARGS}" ] && KEYTOOL_PROVIDER_FLAGS+=(-providerarg "${JAVA_KEYSTORE_PROVIDER_ARGS}")
+			[ -n "${JAVA_KEYSTORE_PROVIDER_PATH}" ] && KEYTOOL_PROVIDER_FLAGS+=(-providerpath "${JAVA_KEYSTORE_PROVIDER_PATH}")
+
+		fi
+
+		#
+		# We name the stores last so we use the correct extension
+		#
+		export JAVA_KEYSTORE="${SSL_DIR}/keystore.${JAVA_KEYSTORE_TYPE,,}"
+		export JAVA_TRUSTSTORE="${JAVA_KEYSTORE}"
+	fi
+
+	################################################################################
+	#
 	# Generate our new certificates
 	#
 	################################################################################
 	set_or_default ACME_PASSWORD_FILE "/.acme.password"
 	if [ -f "${ACME_PASSWORD_FILE}" ] ; then
-		################################################################################
-		#
-		# Initialize the ACME client
-		#
-		################################################################################
-		if step ca health &>/dev/null ; then
-			ok "Step CA client already initialized!"
-		else
-			doing "Initializing the Step CA Acme Client"
-			step ca bootstrap -f \
-				--ca-url "${ACME_URL}" \
-				--fingerprint "$(step certificate fingerprint "${ACME_ROOT_CA_ANCHOR}")"
-			say "\t✅ Done!"
-		fi
-
-		########################################
-		# Copy the CA's certs into the SSL_DIR
-		########################################
-		doing "Copying the root and intermediate CAs into the target directory..."
-		cp -f "${ACME_ROOT_CA_ANCHOR}" "${SSL_DIR}/ca-root.pem"
-		cp -f "${ACME_INT_CA_ANCHOR}" "${SSL_DIR}/ca-int.pem"
-		cat \
-			"${ACME_INT_CA_ANCHOR}" \
-			"${ACME_ROOT_CA_ANCHOR}" \
-			> "${SSL_DIR}/ca-chain.pem"
-		say "\t✅ Done!"
-
 		# This array will contain the list of (absolute) paths for all
 		# files whose ownership and permissions will be set to the most
 		# restrictive of all: only readable by the owner
@@ -640,62 +686,21 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 
 		################################################################################
 		#
-		# Generate the key's password file
-		#
-		################################################################################
-		if [ -v ACME_KEYSTORE_PASSWORD_FILE ] ; then
-			[ -n "${ACME_KEYSTORE_PASSWORD_FILE}" ] || fail "The variable ACME_KEYSTORE_PASSWORD_FILE may not be empty"
-			[ -s "${ACME_KEYSTORE_PASSWORD_FILE}" ] || fail "The password file [${ACME_KEYSTORE_PASSWORD_FILE}] may not be empty"
-		else
-			# We weren't given a password file to use, so use the default value
-			ACME_KEYSTORE_PASSWORD_FILE="${SSL_DIR}/keystore.pass"
-			SECURE_FILES+="${ACME_KEYSTORE_PASSWORD_FILE}"
-
-			# Allow the use of ACME_KEYSTORE_PASSWORD to set the password. This isn't
-			# particularly secure, but it may be required in some instances where the
-			# pod needs to know the password beforehand (i.e. b/c Helm needs to know it)
-			if [ -v ACME_KEYSTORE_PASSWORD ] ; then
-				[ -n "${ACME_KEYSTORE_PASSWORD}" ] || fail "The variable ACME_KEYSTORE_PASSWORD may not be empty"
-				echo -n "${ACME_KEYSTORE_PASSWORD}" > "${ACME_KEYSTORE_PASSWORD_FILE}" || fail "Failed to render the password file at [${ACME_KEYSTORE_PASSWORD_FILE}] with the password given in ACME_KEYSTORE_PASSWORD"
-			else
-				# We weren't given a password, so just render a random one
-				render_password > "${ACME_KEYSTORE_PASSWORD_FILE}" || fail "Failed to render a new password into [${ACME_KEYSTORE_PASSWORD_FILE}]"
-			fi
-		fi
-
-		export ACME_KEYSTORE_PASSWORD="$(<"${ACME_KEYSTORE_PASSWORD_FILE}")"
-		SECURE_FILES+=("${ACME_KEYSTORE_PASSWORD_FILE}")
-
-		################################################################################
-		#
 		# Render the certificate (different if Java is used vs. not)
 		#
 		################################################################################
 		if as_boolean "${KEYTOOL}" ; then
 			doing "Rendering a ${JAVA_KEYSTORE_TYPE} Keystore with the new certificate & key..."
 
-			export JAVA_KEY_PASSWORD="${ACME_KEYSTORE_PASSWORD}"
-			export JAVA_KEY_PASSWORD_FILE="${ACME_KEYSTORE_PASSWORD_FILE}"
-			export JAVA_KEYSTORE_PASSWORD="${ACME_KEYSTORE_PASSWORD}"
-			export JAVA_KEYSTORE_PASSWORD_FILE="${ACME_KEYSTORE_PASSWORD_FILE}"
-			export JAVA_TRUSTSTORE_PASSWORD="${JAVA_KEYSTORE_PASSWORD}"
-			export JAVA_TRUSTSTORE_PASSWORD_FILE="${JAVA_KEYSTORE_PASSWORD_FILE}"
+			export JAVA_KEY_ALIAS="acme"
+			export JAVA_KEY_PASSWORD="${JAVA_KEYSTORE_PASSWORD}"
+			export JAVA_KEY_PASSWORD_FILE="${JAVA_KEYSTORE_PASSWORD_FILE}"
 
-			set_or_default DEFAULT_PBE "AES-256-CBC"
-			set_or_default PKCS12_KEY_PBE "${DEFAULT_PBE}"
-			set_or_default PKCS12_CERT_PBE "${DEFAULT_PBE}"
-
-			# Are these necessary?
-			PKCS12_FLAGS=()
-			[ -n "${PKCS12_KEY_PBE}" ] && PKCS12_FLAGS+=(-keypbe "${PKCS12_KEY_PBE}")
-			[ -n "${PKCS12_CERT_PBE}" ] && PKCS12_FLAGS+=(-certpbe "${PKCS12_CERT_PBE}")
-
-			export KEYTOOL_PROVIDER_FLAGS=()
-			if [ -n "${JAVA_KEYSTORE_PROVIDER}" ] ; then
-				KEYTOOL_PROVIDER_FLAGS+=(-providerclass "${JAVA_KEYSTORE_PROVIDER}")
-				[ -n "${JAVA_KEYSTORE_PROVIDER_ARGS}" ] && KEYTOOL_PROVIDER_FLAGS+=(-providerarg "${JAVA_KEYSTORE_PROVIDER_ARGS}")
-			fi
-			[ -n "${JAVA_KEYSTORE_PROVIDER_PATH}" ] && KEYTOOL_PROVIDER_FLAGS+=(-providerpath "${JAVA_KEYSTORE_PROVIDER_PATH}")
+			JAVAX_NET_SSL_OPTS+=(
+				-Djavax.net.ssl.keyAlias='${JAVA_KEY_ALIAS}'
+				-Djavax.net.ssl.keyPasswordFile='${JAVA_KEY_PASSWORD_FILE}'
+				-Djavax.net.ssl.keyPassword='${JAVA_KEY_PASSWORD}'
+			)
 
 			KT_SAN=""
 			[ "${#SAN[@]}" -gt 0 ] && doing "Rendering certificate for the following SANs:"
@@ -747,34 +752,27 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 
 			# Get the CSR signed
 			CERT="${SSL_DIR}/cert.pem"
+			GARBAGE+=( "${CERT}" )
+			TMP_CERT="$(mktemp --tmpdir="${SSL_DIR}" ".temp-cert-XXXXXXXX.pem")"
+			GARBAGE+=( "${TMP_CERT}" )
 			doing "Submitting the certificate signing request..."
-			step ca sign "${CSR}" "${CERT}" \
+			step ca sign "${CSR}" "${TMP_CERT}" \
+				--force \
 				--not-before="-1h30m" \
 				--provisioner-password-file "${ACME_PASSWORD_FILE}" \
 				--password-file="${ACME_KEYSTORE_PASSWORD_FILE}" || fail "Failed to get the certificate signature"
 			ok "The certificate was signed!"
-			GARBAGE+=( "${CERT}" )
 
-			doing "Importing the root siginig CA into the keystore..."
-			CMD=(
-				keytool -import
-					-file "${SSL_DIR}/ca-root.pem"
-					-keystore "${JAVA_KEYSTORE}"
-					-noprompt
-					-storetype "${JAVA_KEYSTORE_TYPE}"
-					-storepass "$(<"${JAVA_KEYSTORE_PASSWORD_FILE}")"
-					"${KEYTOOL_PROVIDER_FLAGS[@]}"
-			)
-			OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to import the root signing CA into the keystore (rc=${?}): ${OUT}"
-			ok "The root CA was imported!"
+			# Extract the certificate and any intermediates chain (don't import, will happen automatically later)
+			split_signed_cert "${TMP_CERT}" "${CERT}" "${SSL_DIR}/ca-chain.pem" "${SSL_DIR}/ca-root.pem" "${SSL_DIR}/ca-int.pem"
+			is_file_readable "${SSL_DIR}/ca-chain.pem" && install_chain "${OS_SSL_ANCHORS}/ca-int" "${OS_SSL_SUFFIX}" < "${SSL_DIR}/ca-int.pem"
 
-			# doing "Removing extra stuff from the certificate..."
-			# sed -i -e '/^-\+END CERTIFICATE-\+$/q' "${CERT}"
+			# We import the signers as well
 			doing "Importing the signed certificate into the keystore..."
 			CMD=(
 				keytool -import
 					-alias "${JAVA_KEY_ALIAS}"
-					-file "${CERT}"
+					-file "${TMP_CERT}"
 					-keystore "${JAVA_KEYSTORE}"
 					-noprompt
 					-storetype "${JAVA_KEYSTORE_TYPE}"
@@ -801,9 +799,12 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 			# kind of wonky b/c the cert will be OK, but it will not be accepted by the
 			# consuming processes until the not-before time has past. By using a back-in-time
 			# approach we ensure that the certificate will always be "born ready"
+			CERT="${SSL_DIR}/cert.pem"
+			TMP_CERT="$(mktemp --tmpdir="${SSL_DIR}" ".temp-cert-XXXXXXXX.pem")"
+			GARBAGE+=( "${TMP_CERT}" )
 			doing "Rendering a new certificate for this pod's use"
 			step ca certificate \
-				"${FQDN}" "${SSL_DIR}/cert.pem" "${SSL_DIR}/cert.key" \
+				"${FQDN}" "${TMP_CERT}" "${SSL_DIR}/cert.key" \
 				"${SAN_ARG[@]}" \
 				--force \
 				--not-before="-1h30m" \
@@ -811,9 +812,10 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 				--kty RSA \
 				--provisioner-password-file "${ACME_PASSWORD_FILE}" \
 				--password-file="${ACME_KEYSTORE_PASSWORD_FILE}"
-			doing "Removing extra stuff from the certificate..."
-			sed -i -e '/^-\+END CERTIFICATE-\+$/q' "${SSL_DIR}/cert.pem"
-			say "\t✅ Certificate ready!"
+
+			# Extract the certificate and any intermediates chain (don't import, will happen automatically later)
+			split_signed_cert "${TMP_CERT}" "${CERT}" "${SSL_DIR}/ca-chain.pem" "${SSL_DIR}/ca-root.pem" "${SSL_DIR}/ca-int.pem"
+			is_file_readable "${SSL_DIR}/ca-chain.pem" && install_chain "${OS_SSL_ANCHORS}/ca-int" "${OS_SSL_SUFFIX}" < "${SSL_DIR}/ca-int.pem"
 
 			set_as_boolean SSL_DH_APPEND "false"
 			if as_boolean "${SSL_DH_APPEND}" ; then
@@ -821,7 +823,7 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 				doing "Rendering the Diffie-Hellman parameters..."
 				OUT="$(openssl dhparam -outform pem -out "${SSL_DIR}/dh.pem" "${SSL_DH_SIZE}" 2>&1)"  || fail "Failed to generate the DH parameters (rc=${?}): ${OUT}"
 				doing "Appending Diffie-Hellman parameters to the certificate"
-				( echo "" ; cat "${SSL_DIR}/dh.pem" ) >> "${SSL_DIR}/cert.pem" || fail "Failed to append the DH parameters to the certifiate"
+				( echo "" ; cat "${SSL_DIR}/dh.pem" ) >> "${CERT}" || fail "Failed to append the DH parameters to the certifiate"
 				say "\tDH parameters appended!"
 			fi
 			SECURE_FILES+=("${SSL_DIR}/cert.key")
@@ -838,7 +840,7 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 
 			doing "Rendering the certificate files for HAProxy..."
 			cat \
-				"${SSL_DIR}/cert.pem" \
+				"${CERT}" \
 				"${SSL_DIR}/ca-chain.pem" \
 				"${SSL_DIR}/cert.key" \
 				> "${SSL_DIR}/haproxy-cert.pem"
@@ -857,10 +859,9 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 		# can easily be world-readable since they're all encrypted
 		# one way or another, or are meant to be publicly-accessible
 		if [ ${#SECURE_FILES[@]} -gt 0 ] ; then
-			KEY_OWNER="root"
-			[ -v SUDO_USER ] && KEY_OWNER="${SUDO_USER}"
+			[ -v SUDO_USER ] && KEY_OWNER="${SUDO_USER}" || KEY_OWNER="root"
 			chown "${KEY_OWNER}:${ACM_GROUP}" "${SECURE_FILES[@]}"
-			chmod -R u=r,go= "${SECURE_FILES[@]}"
+			chmod u=r,go= "${SECURE_FILES[@]}"
 		fi
 
 		say "\t✅ Done!"
@@ -912,10 +913,6 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 			JAVA_KEYSTORE_PROVIDER_PATH
 			JAVA_KEYSTORE_PROVIDER_ARGS
 
-			JAVA_KEY_ALIAS
-			JAVA_KEY_PASSWORD_FILE
-			JAVA_KEY_PASSWORD
-
 			JAVA_TRUSTSTORE
 			JAVA_TRUSTSTORE_PASSWORD_FILE
 			JAVA_TRUSTSTORE_PASSWORD
@@ -927,9 +924,22 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 			JAVA_GLOBAL_TRUSTSTORE
 			JAVA_GLOBAL_TRUSTSTORE_TYPE
 			JAVA_GLOBAL_TRUSTSTORE_PASSWORD
-
-			JAVAX_NET_SSL_OPTIONS
 		)
+
+		if [ -v JAVA_KEY_ALIAS ] ; then
+			SSL_ENV_FILE_VARS+=(
+				JAVA_KEY_ALIAS
+				JAVA_KEY_PASSWORD_FILE
+				JAVA_KEY_PASSWORD
+			)
+		fi
+
+		# Add these two last, in case there's no reason to add them
+		[ -n "${JAVA_KEYSTORE_PROVIDER}" ] && JAVAX_NET_SSL_OPTS+=( -Djavax.net.ssl.keyStoreProvider='${JAVA_KEYSTORE_PROVIDER}' )
+		[ -n "${JAVA_TRUSTSTORE_PROVIDER}" ] && JAVAX_NET_SSL_OPTS+=( -Djavax.net.ssl.trustStoreProvider='${JAVA_TRUSTSTORE_PROVIDER}' )
+
+		# This one goes last b/c it'll be the biggest and baddest, so the file is easier to read
+		SSL_ENV_FILE_VARS+=( JAVAX_NET_SSL_OPTIONS )
 
 		#
 		# Render the final JVM options consuming all the above variables
