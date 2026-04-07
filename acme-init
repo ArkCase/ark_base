@@ -883,7 +883,7 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 	# Also we only do this if we built a keystore ... if we didn't build one,
 	# we don't really care
 	#
-	if as_boolean "${KEYTOOL}" && is_file "${JAVA_KEYSTORE}" ; then
+	if as_boolean "${KEYTOOL}" ; then
 		doing "Adding the global trusts to the ${JAVA_KEYSTORE_TYPE} keystore!"
 		CMD=(
 			keytool -importkeystore
