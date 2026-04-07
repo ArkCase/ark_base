@@ -1568,6 +1568,32 @@ is_fips()
 }
 
 #
+# usage: is_fips_bool
+#
+# Outputs "true" if FIPS is ENABLED, "false" if it's DISABLED. It's
+# the logical negation of is_not_fips_boolean
+#
+is_fips_boolean()
+{
+	local V="true"
+	is_fips || V="false"
+	echo -n "${V}"
+}
+
+#
+# usage: is_not_fips_bool
+#
+# Outputs "true" if FIPS is DISABLED, "false" if it's ENABLED. It's
+# the logical negation of is_fips_boolean
+#
+is_not_fips_boolean()
+{
+	local V="false"
+	is_fips || V="true"
+	echo -n "${V}"
+}
+
+#
 # usage: set_godebug_fips140
 #
 # Set the GODEBUG variable's FIPS140 value to the correct setting.
