@@ -297,7 +297,7 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 			warn "The following variables were undefined [ ${UNDEF[@]} ]"
 
 		# Make sure everything is readable
-		chmod a+X "${DIR}"
+		chmod a+rX "${DIR}"
 		chmod ugo=r "${SSL_ENV_FILE}"
 	}
 	trap finalize EXIT
