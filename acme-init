@@ -297,8 +297,8 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 			warn "The following variables were undefined [ ${UNDEF[@]} ]"
 
 		# Make sure everything is readable
-		chmod a+rX "${DIR}"
-		chmod ugo=r "${SSL_ENV_FILE}"
+		chown --reference="${SECURE_FILES[0]}" "${SSL_ENV_FILE}"
+		chmod --reference="${SECURE_FILES[0]}" "${SSL_ENV_FILE}"
 	}
 	trap finalize EXIT
 
@@ -319,11 +319,11 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 
 	################################################################################
 	#
-	# Apply any FIPS-related adjustments
+	# Define the FIPS flag for convenience
 	#
 	################################################################################
-	export FIPS="false"
-	is_fips && FIPS="true"
+	is_fips && FIPS="true" || FIPS="false"
+	export FIPS
 
 	#
 	# Configure any GoLang stuff
@@ -491,6 +491,14 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 		say "\t✅ Deployed ${COUNT} certificates!"
 	fi
 
+	# This array will contain the list of (absolute) paths for all
+	# files whose ownership and permissions will be set to the most
+	# restrictive of all: only readable by the owner
+	SECURE_FILES=()
+
+	# This helps us do cleanup on exit
+	GARBAGE=()
+
 	################################################################################
 	#
 	# Generate the key's password file
@@ -524,22 +532,42 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 	#
 	################################################################################
 	if as_boolean "${KEYTOOL}" ; then
+
+		set_or_default JAVA_SSL_KEYSTORE_TYPE "BCFKS"
+		set_or_default JAVA_SSL_KEYSTORE_PROVIDER "org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider"
+		set_or_default JAVA_SSL_KEYSTORE_PROVIDER_PATH "${FIPS_DIR:-}"
+		set_or_default JAVA_SSL_KEYSTORE_PROVIDER_ARGS
+
+		# The path must be a directory, not a file
+		if is_dir_readable "${JAVA_SSL_KEYSTORE_PROVIDER_PATH}" ; then
+			JARS=""
+			while read JAR ; do
+				is_file_readable "${JAR}" && JARS+="${JARS:+:}${JAR}" && continue
+				warn "The Keystore provider file [${JAR}] is not readable!"
+			done < <(find "${JAVA_SSL_KEYSTORE_PROVIDER_PATH}" -mindepth 1 -maxdepth 1 -type f \( -iname '*.jar' -or -iname '*.zip' \) | sort -u)
+			[ -n "${JARS}" ] && JAVA_SSL_KEYSTORE_PROVIDER_PATH="${JARS}" || warn "No SSL providers found at ${JAVA_SSL_KEYSTORE_PROVIDER_PATH@Q}"
+		elif [ -n "${JAVA_SSL_KEYSTORE_PROVIDER_PATH}" ] ; then
+			fail "The value for JAVA_SSL_KEYSTORE_PROVIDER_PATH must be a directory, which ${JAVA_SSL_KEYSTORE_PROVIDER_PATH@Q} is not!"
+		fi
+
 		#
 		# Define all the Java-related variables
 		#
+		export JAVA_KEYSTORE_TYPE="${JAVA_SSL_KEYSTORE_TYPE}"
+		export JAVA_KEYSTORE="${SSL_DIR}/keystore.${JAVA_KEYSTORE_TYPE,,}"
 		export JAVA_KEYSTORE_PASSWORD="${ACME_KEYSTORE_PASSWORD}"
 		export JAVA_KEYSTORE_PASSWORD_FILE="${ACME_KEYSTORE_PASSWORD_FILE}"
-		export JAVA_KEYSTORE_TYPE="PKCS12"
-		export JAVA_KEYSTORE_PROVIDER=""
-		export JAVA_KEYSTORE_PROVIDER_PATH=""
-		export JAVA_KEYSTORE_PROVIDER_ARGS=""
+		export JAVA_KEYSTORE_PROVIDER="${JAVA_SSL_KEYSTORE_PROVIDER}"
+		export JAVA_KEYSTORE_PROVIDER_PATH="${JAVA_SSL_KEYSTORE_PROVIDER_PATH}"
+		export JAVA_KEYSTORE_PROVIDER_ARGS="${JAVA_SSL_KEYSTORE_PROVIDER_ARGS}"
 
+		export JAVA_TRUSTSTORE_TYPE="${JAVA_KEYSTORE_TYPE}"
+		export JAVA_TRUSTSTORE="${JAVA_KEYSTORE}"
 		export JAVA_TRUSTSTORE_PASSWORD="${JAVA_KEYSTORE_PASSWORD}"
 		export JAVA_TRUSTSTORE_PASSWORD_FILE="${JAVA_KEYSTORE_PASSWORD_FILE}"
-		export JAVA_TRUSTSTORE_TYPE="${JAVA_KEYSTORE_TYPE}"
-		export JAVA_TRUSTSTORE_PROVIDER=""
-		export JAVA_TRUSTSTORE_PROVIDER_PATH=""
-		export JAVA_TRUSTSTORE_PROVIDER_ARGS=""
+		export JAVA_TRUSTSTORE_PROVIDER="${JAVA_KEYSTORE_PROVIDER}"
+		export JAVA_TRUSTSTORE_PROVIDER_PATH="${JAVA_KEYSTORE_PROVIDER_PATH}"
+		export JAVA_TRUSTSTORE_PROVIDER_ARGS="${JAVA_KEYSTORE_PROVIDER_ARGS}"
 
 		export JAVA_GLOBAL_TRUSTSTORE="${OS_SSL_CACERTS}"
 		export JAVA_GLOBAL_TRUSTSTORE_TYPE="JKS"
@@ -555,57 +583,17 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 			-Djavax.net.ssl.trustStorePasswordFile='${JAVA_TRUSTSTORE_PASSWORD_FILE}'
 			-Djavax.net.ssl.trustStorePassword='${JAVA_TRUSTSTORE_PASSWORD}'
 			-Djavax.net.ssl.trustStoreType='${JAVA_TRUSTSTORE_TYPE}'
+
+			-Dssl.KeyManagerFactory.algorithm="PKIX"
+			-Dssl.TrustManagerFactory.algorithm="PKIX"
 		)
-
-		#
-		# Apply the FIPS adjustments
-		#
-		if is_fips ; then
-
-			set_or_default JAVA_FIPS_KEYSTORE_TYPE "BCFKS"
-			set_or_default JAVA_FIPS_KEYSTORE_PROVIDER "org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider"
-			set_or_default JAVA_FIPS_KEYSTORE_PROVIDER_PATH "${BC_PROV_JAR:-}"
-			set_or_default JAVA_FIPS_KEYSTORE_PROVIDER_ARGS
-
-			# TODO: Should we support paths as well? For now, no...
-			# TODO: do we want to validate if the class is present?
-			require_file_readable "${JAVA_FIPS_KEYSTORE_PROVIDER_PATH}"
-
-			#
-			# The keystore is now FIPS-capable
-			#
-			JAVA_KEYSTORE_TYPE="${JAVA_FIPS_KEYSTORE_TYPE}"
-			JAVA_KEYSTORE_PROVIDER="${JAVA_FIPS_KEYSTORE_PROVIDER}"
-			JAVA_KEYSTORE_PROVIDER_PATH="${JAVA_FIPS_KEYSTORE_PROVIDER_PATH}"
-			JAVA_KEYSTORE_PROVIDER_ARGS="${JAVA_FIPS_KEYSTORE_PROVIDER_ARGS}"
-
-			#
-			# The FIPS keystore becomes the truststore
-			#
-			JAVA_TRUSTSTORE_TYPE="${JAVA_KEYSTORE_TYPE}"
-			JAVA_TRUSTSTORE_PROVIDER="${JAVA_KEYSTORE_PROVIDER}"
-			JAVA_TRUSTSTORE_PROVIDER_PATH="${JAVA_KEYSTORE_PROVIDER_PATH}"
-			JAVA_TRUSTSTORE_PROVIDER_ARGS="${JAVA_KEYSTORE_PROVIDER_ARGS}"
-
-			JAVAX_NET_SSL_OPTS+=(
-				-Dssl.KeyManagerFactory.algorithm="PKIX"
-				-Dssl.TrustManagerFactory.algorithm="PKIX"
-			)
-		fi
 
 		export KEYTOOL_PROVIDER_FLAGS=()
 		if [ -n "${JAVA_KEYSTORE_PROVIDER}" ] ; then
 			KEYTOOL_PROVIDER_FLAGS+=(-providerclass "${JAVA_KEYSTORE_PROVIDER}")
 			[ -n "${JAVA_KEYSTORE_PROVIDER_ARGS}" ] && KEYTOOL_PROVIDER_FLAGS+=(-providerarg "${JAVA_KEYSTORE_PROVIDER_ARGS}")
 			[ -n "${JAVA_KEYSTORE_PROVIDER_PATH}" ] && KEYTOOL_PROVIDER_FLAGS+=(-providerpath "${JAVA_KEYSTORE_PROVIDER_PATH}")
-
 		fi
-
-		#
-		# We name the stores last so we use the correct extension
-		#
-		export JAVA_KEYSTORE="${SSL_DIR}/keystore.${JAVA_KEYSTORE_TYPE,,}"
-		export JAVA_TRUSTSTORE="${JAVA_KEYSTORE}"
 	fi
 
 	################################################################################
@@ -615,14 +603,6 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 	################################################################################
 	set_or_default ACME_PASSWORD_FILE "/.acme.password"
 	if [ -f "${ACME_PASSWORD_FILE}" ] ; then
-		# This array will contain the list of (absolute) paths for all
-		# files whose ownership and permissions will be set to the most
-		# restrictive of all: only readable by the owner
-		SECURE_FILES=()
-
-		# This helps us do cleanup on exit
-		GARBAGE=()
-
 		################################################################################
 		#
 		# Compute all the values to be added to the certificate's SAN
@@ -850,20 +830,6 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 
 		doing "Protecting the generated data..."
 
-		# By default, owned by root but readable by ACM_GROUP
-		chown -R "root:${ACM_GROUP}" "${SSL_DIR}"
-		chmod -R a=rX "${SSL_DIR}"
-
-		# Secure the most sensitive files so they're only readable
-		# by the user who will be consuming them ... the other files
-		# can easily be world-readable since they're all encrypted
-		# one way or another, or are meant to be publicly-accessible
-		if [ ${#SECURE_FILES[@]} -gt 0 ] ; then
-			[ -v SUDO_USER ] && KEY_OWNER="${SUDO_USER}" || KEY_OWNER="root"
-			chown "${KEY_OWNER}:${ACM_GROUP}" "${SECURE_FILES[@]}"
-			chmod u=r,go= "${SECURE_FILES[@]}"
-		fi
-
 		say "\t✅ Done!"
 	else
 		err "Couldn't find the provisioner password file at [${ACME_PASSWORD_FILE}], did not generate any new certificates or keystores"
@@ -945,6 +911,21 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 		# Render the final JVM options consuming all the above variables
 		#
 		export JAVAX_NET_SSL_OPTIONS="$(echo -n "${JAVAX_NET_SSL_OPTS[@]}" | envsubst)"
+	fi
+
+	# By default, owned by root but readable by everyone
+	chown -R "root:${ACM_GROUP}" "${SSL_DIR}"
+	chmod -R ug=rX,o= "${SSL_DIR}"
+
+	# Secure the most sensitive files so they're only readable
+	# by the user who will be consuming them ... the other files
+	# can easily be world-readable since they're all encrypted
+	# one way or another, or are meant to be publicly-accessible
+	if [ ${#SECURE_FILES[@]} -gt 0 ] ; then
+		doing "Securing the private SSL files: [ ${SECURE_FILES[@]@Q} ]"
+		[ -v SUDO_USER ] && KEY_OWNER="${SUDO_USER}" || KEY_OWNER="root"
+		chown "${KEY_OWNER}:${ACM_GROUP}" "${SECURE_FILES[@]}"
+		chmod u=r,go= "${SECURE_FILES[@]}"
 	fi
 
 	export RESULT_OK="true"
