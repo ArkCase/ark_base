@@ -186,52 +186,6 @@ download_chain()
 	return ${RC}
 }
 
-split_signed_cert()
-{
-	local SRC="${1}"
-	local CERT="${2}"
-	local CHAIN="${3:-}"
-	local ROOT="${4:-}"
-	local INT="${5:-}"
-
-	local OUT=""
-	doing "Extracting the certificate from the signed bundle..."
-	if [ $(grep -c -- "-----END CERTIFICATE-----" "${SRC}") -le 1 ] ; then
-		#
-		# No bundle ... just the certificate!
-		#
-		OUT="$(cp -vf "${SRC}" "${CERT}" 2>&1)" || fail "Failed to deploy the downloaded certificate (rc=${?}): ${OUT}"
-
-		if [ -n "${CHAIN}" ] && [ -n "${ROOT}" ] ; then
-			cat "${SSL_DIR}/ca-root.pem" > "${SSL_DIR}/ca-chain.pem" || fail "Failed to generate the certificate signing chain (rc=${?})"
-			say "\t✅ Chain ready!"
-		fi
-		say "\t✅ Certificate ready!"
-		return 0
-	fi
-
-	#
-	# Signed bundle! Split it!
-	#
-	doing "Splitting the signed bundle..."
-	if [ -n "${INT}" ] ; then
-		sed -e '0,/-----END CERTIFICATE-----/d' < "${SRC}" > "${INT}" || fail "Failed to extract the intermediate CAs from the signed bundle (rc=${?})"
-		say "\t✅ Intermediates ready!"
-	fi
-
-	if [ -n "${CHAIN}" ] && [ -n "${ROOT}${INT}" ] ; then
-		(
-			[ -n "${INT}" ] && cat "${INT}"
-			[ -n "${ROOT}" ] && cat "${ROOT}"
-		) > "${CHAIN}" || fail "Failed to generate the certificate signing chain (rc=${?})"
-		say "\t✅ Chain ready!"
-	fi
-
-	sed -e '/-----END CERTIFICATE-----/q' < "${SRC}" > "${CERT}" || fail "Failed to extract the certificate from the signed bundle (rc=${?})"
-	say "\t✅ Certificate ready!"
-	return 0
-}
-
 expand_vars()
 {
 	echo -n "${@}" | envsubst
@@ -760,8 +714,14 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 			ok "The certificate was signed!"
 
 			# Extract the certificate and any intermediates chain (don't import, will happen automatically later)
-			split_signed_cert "${TMP_CERT}" "${CERT}" "${SSL_DIR}/ca-chain.pem" "${SSL_DIR}/ca-root.pem" "${SSL_DIR}/ca-int.pem"
-			is_file_readable "${SSL_DIR}/ca-chain.pem" && install_chain "${OS_SSL_ANCHORS}/ca-int" "${OS_SSL_SUFFIX}" < "${SSL_DIR}/ca-int.pem"
+			if [ $(grep -c -- "-----END CERTIFICATE-----" "${CERT}") -gt 1 ] ; then
+				INT="${SSL_DIR}/ca-int.pem"
+				GARBAGE+=( "${INT}" )
+				doing "Extracting the intermediate certificates from the signed bundle..."
+				sed -e '0,/-----END CERTIFICATE-----/d' < "${CERT}" > "${INT}" || fail "Failed to extract the intermediate CAs from the signed bundle (rc=${?})"
+				say "\t✅ Intermediates ready!"
+				install_chain "${OS_SSL_ANCHORS}/ca-int" "${OS_SSL_SUFFIX}" < "${INT}"
+			fi
 
 			# We import the signers as well
 			doing "Importing the signed certificate into the keystore..."
@@ -796,11 +756,9 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 			# consuming processes until the not-before time has past. By using a back-in-time
 			# approach we ensure that the certificate will always be "born ready"
 			CERT="${SSL_DIR}/cert.pem"
-			TMP_CERT="$(mktemp --tmpdir="${SSL_DIR}" ".temp-cert-XXXXXXXX.pem")"
-			GARBAGE+=( "${TMP_CERT}" )
 			doing "Rendering a new certificate for this pod's use"
 			step ca certificate \
-				"${FQDN}" "${TMP_CERT}" "${SSL_DIR}/cert.key" \
+				"${FQDN}" "${CERT}" "${SSL_DIR}/cert.key" \
 				"${SAN_ARG[@]}" \
 				--force \
 				--not-before="-1h30m" \
@@ -808,10 +766,6 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 				--kty RSA \
 				--provisioner-password-file "${ACME_PASSWORD_FILE}" \
 				--password-file="${ACME_KEYSTORE_PASSWORD_FILE}"
-
-			# Extract the certificate and any intermediates chain (don't import, will happen automatically later)
-			split_signed_cert "${TMP_CERT}" "${CERT}" "${SSL_DIR}/ca-chain.pem" "${SSL_DIR}/ca-root.pem" "${SSL_DIR}/ca-int.pem"
-			is_file_readable "${SSL_DIR}/ca-chain.pem" && install_chain "${OS_SSL_ANCHORS}/ca-int" "${OS_SSL_SUFFIX}" < "${SSL_DIR}/ca-int.pem"
 
 			set_as_boolean SSL_DH_APPEND "false"
 			if as_boolean "${SSL_DH_APPEND}" ; then
@@ -837,7 +791,7 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 			doing "Rendering the certificate files for HAProxy..."
 			cat \
 				"${CERT}" \
-				"${SSL_DIR}/ca-chain.pem" \
+				"${SSL_DIR}/ca-root.pem" \
 				"${SSL_DIR}/cert.key" \
 				> "${SSL_DIR}/haproxy-cert.pem"
 			SECURE_FILES+=("${SSL_DIR}/haproxy-cert.pem")
