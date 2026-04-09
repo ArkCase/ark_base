@@ -884,8 +884,11 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 		[ -n "${JAVA_TRUSTSTORE_PROVIDER}" ] && JAVAX_NET_SSL_OPTS+=( -Djavax.net.ssl.trustStoreProvider='${JAVA_TRUSTSTORE_PROVIDER}' )
 		[ -n "${JAVA_TRUSTSTORE_PROVIDER_CLASS}" ] && JAVAX_NET_SSL_OPTS+=( -Djavax.net.ssl.trustStoreProviderClass='${JAVA_TRUSTSTORE_PROVIDER_CLASS}' )
 
-		# This one goes last b/c it'll be the biggest and baddest, so the file is easier to read
+		export JAVA_KEYTOOL_PROVIDER_FLAGS="${KEYTOOL_PROVIDER_FLAGS[@]}"
+
+		# These two go last b/c they'll be the biggest and baddest, so the file is easier to read
 		SSL_ENV_FILE_VARS+=( JAVAX_NET_SSL_OPTIONS )
+		SSL_ENV_FILE_VARS+=( JAVA_KEYTOOL_PROVIDER_FLAGS )
 
 		#
 		# Render the final JVM options consuming all the above variables
