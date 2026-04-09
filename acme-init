@@ -651,6 +651,22 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 			"localhost"
 		)
 
+		# These two are added to support developer machines, but they only get enabled
+		# when using our developer-centric K8s deployment
+		#
+		set_or_default LOCAL_DEV_HOSTNAME "k8s.cluster.prv"
+		if is_valid_hostname "${LOCAL_DEV_HOSTNAME}" ; then
+			# This should be an instant resolve for our developer machines
+			LOCAL_DEV_IPV4="$(dig +short +timeout=1 +retry=0 "${LOCAL_DEV_HOSTNAME}" 2>&1)"
+			if is_valid_ipv4 "${LOCAL_DEV_IPV4}" ; then
+				warn "Adding the local development SAN entries: ${LOCAL_DEV_HOSTNAME}/${LOCAL_DEV_IPV4}"
+				SAN+=(
+					"${LOCAL_DEV_IPV4}"
+					"${LOCAL_DEV_HOSTNAME}"
+				)
+			fi
+		fi
+
 		# Add the extra SAN names, if provided. The list can be separated by spaces, commas, or colons
 		while read S ; do
 			if is_valid_ipv4 "${S}" || is_valid_hostname "${S}" ; then
