@@ -701,8 +701,6 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 			ok "The request is ready!"
 
 			# Get the CSR signed
-			CERT="${SSL_DIR}/cert.pem"
-			GARBAGE+=( "${CERT}" )
 			TMP_CERT="$(mktemp --tmpdir="${SSL_DIR}" ".temp-cert-XXXXXXXX.pem")"
 			GARBAGE+=( "${TMP_CERT}" )
 			doing "Submitting the certificate signing request..."
@@ -714,11 +712,11 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 			ok "The certificate was signed!"
 
 			# Extract the certificate and any intermediates chain (don't import, will happen automatically later)
-			if [ $(grep -c -- "-----END CERTIFICATE-----" "${CERT}") -gt 1 ] ; then
+			if [ $(grep -c -- "-----END CERTIFICATE-----" "${TMP_CERT}") -gt 1 ] ; then
 				INT="${SSL_DIR}/ca-int.pem"
 				GARBAGE+=( "${INT}" )
 				doing "Extracting the intermediate certificates from the signed bundle..."
-				sed -e '0,/-----END CERTIFICATE-----/d' < "${CERT}" > "${INT}" || fail "Failed to extract the intermediate CAs from the signed bundle (rc=${?})"
+				sed -e '0,/-----END CERTIFICATE-----/d' < "${TMP_CERT}" > "${INT}" || fail "Failed to extract the intermediate CAs from the signed bundle (rc=${?})"
 				say "\t✅ Intermediates ready!"
 				install_chain "${OS_SSL_ANCHORS}/ca-int" "${OS_SSL_SUFFIX}" < "${INT}"
 			fi
