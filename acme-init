@@ -553,12 +553,13 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 		export KEYTOOL_PROVIDER_FLAGS=()
 		if [ -n "${JAVA_KEYSTORE_PROVIDER}" ] || [ -n "${JAVA_KEYSTORE_PROVIDER_CLASS}" ] ; then
 			PARAM=""
-			if [ -n "${JAVA_KEYSTORE_PROVIDER}" ] ; then
-				PARAM="-addprovider"
-				VALUE="${JAVA_KEYSTORE_PROVIDER}"
-			elif [ -n "${JAVA_KEYSTORE_PROVIDER_CLASS}" ] ; then
+			# Important: for Keytool, prefer the provider class vs. the symbolic name
+			if [ -n "${JAVA_KEYSTORE_PROVIDER_CLASS}" ] ; then
 				PARAM="-providerclass"
 				VALUE="${JAVA_KEYSTORE_PROVIDER_CLASS}"
+			elif [ -n "${JAVA_KEYSTORE_PROVIDER}" ] ; then
+				PARAM="-addprovider"
+				VALUE="${JAVA_KEYSTORE_PROVIDER}"
 			fi
 			if [ -n "${PARAM}" ] ; then
 				KEYTOOL_PROVIDER_FLAGS+=("${PARAM}" "${VALUE}")
