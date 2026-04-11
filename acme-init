@@ -493,6 +493,14 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 		set_or_default JAVA_SSL_KEYSTORE_PROVIDER_PATH "${FIPS_DIR:-}"
 		set_or_default JAVA_SSL_KEYSTORE_PROVIDER_ARGS
 
+		#
+		# Allow using dashes to "blank out" parameters
+		#
+		[ "${JAVA_SSL_KEYSTORE_PROVIDER}" == "-" ] && JAVA_SSL_KEYSTORE_PROVIDER=""
+		[ "${JAVA_SSL_KEYSTORE_PROVIDER_CLASS}" == "-" ] && JAVA_SSL_KEYSTORE_PROVIDER_CLASS=""
+		[ "${JAVA_SSL_KEYSTORE_PROVIDER_PATH}" == "-" ] && JAVA_SSL_KEYSTORE_PROVIDER_PATH=""
+		[ "${JAVA_SSL_KEYSTORE_PROVIDER_ARGS}" == "-" ] && JAVA_SSL_KEYSTORE_PROVIDER_ARGS=""
+
 		# The path must be a directory, not a file
 		if is_dir_readable "${JAVA_SSL_KEYSTORE_PROVIDER_PATH}" ; then
 			JARS=""
@@ -540,16 +548,18 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 			-Djavax.net.ssl.trustStorePasswordFile='${JAVA_TRUSTSTORE_PASSWORD_FILE}'
 			-Djavax.net.ssl.trustStorePassword='${JAVA_TRUSTSTORE_PASSWORD}'
 			-Djavax.net.ssl.trustStoreType='${JAVA_TRUSTSTORE_TYPE}'
-
-			-Dssl.KeyManagerFactory.algorithm="PKIX"
-			-Dssl.TrustManagerFactory.algorithm="PKIX"
 		)
 
 		export KEYTOOL_PROVIDER_FLAGS=()
 		if [ -n "${JAVA_KEYSTORE_PROVIDER}" ] || [ -n "${JAVA_KEYSTORE_PROVIDER_CLASS}" ] ; then
 			PARAM=""
-			[ -n "${JAVA_KEYSTORE_PROVIDER}" ] && PARAM="-addprovider" && VALUE="${JAVA_KEYSTORE_PROVIDER}"
-			[ -n "${JAVA_KEYSTORE_PROVIDER_CLASS}" ] && PARAM="-providerclass" && VALUE="${JAVA_KEYSTORE_PROVIDER_CLASS}"
+			if [ -n "${JAVA_KEYSTORE_PROVIDER}" ] ; then
+				PARAM="-addprovider"
+				VALUE="${JAVA_KEYSTORE_PROVIDER}"
+			elif [ -n "${JAVA_KEYSTORE_PROVIDER_CLASS}" ] ; then
+				PARAM="-providerclass"
+				VALUE="${JAVA_KEYSTORE_PROVIDER_CLASS}"
+			fi
 			if [ -n "${PARAM}" ] ; then
 				KEYTOOL_PROVIDER_FLAGS+=("${PARAM}" "${VALUE}")
 				[ -n "${JAVA_KEYSTORE_PROVIDER_ARGS}" ] && KEYTOOL_PROVIDER_FLAGS+=(-providerarg "${JAVA_KEYSTORE_PROVIDER_ARGS}")
