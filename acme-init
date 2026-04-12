@@ -193,20 +193,21 @@ expand_vars()
 
 await_if_necessary()
 {
-	export CONSTRUCT_CERTIFICATE="true"
 	set_or_default ACME_WAIT "false"
 	if as_boolean "${ACME_WAIT}" ; then
 		set_or_default ACME_WAIT_TIMEOUT "20m"
 		wait_for_marker "${SSL_ENV_FILE}" "${ACME_WAIT_TIMEOUT}" || fail "ACME client initialization timed out"
+		quit "ACME rendering is complete, you can load the necessary variables from [${SSL_ENV_FILE}]"
 
-		if certificate_is_valid ; then
-			ok "The certificate is ready! You can load the necessary variables from [${SSL_ENV_FILE}] for access"
-			CONSTRUCT_CERTIFICATE="false"
-		else
-			err "The certificate validation failed - will generate a new certifiate"
-			CONSTRUCT_CERTIFICATE="true"
-		fi
+		# if certificate_is_valid ; then
+		#	ok "The certificate is ready! You can load the necessary variables from [${SSL_ENV_FILE}] for access"
+		#	CONSTRUCT_CERTIFICATE="false"
+		# else
+		#	err "The certificate validation failed - will generate a new certifiate"
+		#	CONSTRUCT_CERTIFICATE="true"
+		# fi
 	fi
+	return 0
 }
 
 download_trusts()
@@ -346,6 +347,7 @@ download_trusts()
 	else
 		say "\t✅ Deployed ${COUNT} certificates!"
 	fi
+	return 0
 }
 
 certificate_is_valid()
@@ -387,6 +389,7 @@ generate_password()
 
 	export ACME_KEYSTORE_PASSWORD="$(<"${ACME_KEYSTORE_PASSWORD_FILE}")"
 	SECURE_FILES+=( "${ACME_KEYSTORE_PASSWORD_FILE}" )
+	return 0
 }
 
 compute_certificate_san()
@@ -465,6 +468,7 @@ compute_certificate_san()
 			"${CMD}" "The value [${S}] from SSL_EXTRA_SAN is neither a valid IP nor a valid hostname"
 		fi
 	done < <(split_hostnames "${SSL_EXTRA_SAN}")
+	return 0
 }
 
 initialize_java()
@@ -584,6 +588,7 @@ initialize_java()
 		fi
 	fi
 	[ -n "${JAVA_KEYSTORE_PROVIDER_PATH}" ] && KEYTOOL_PROVIDER_FLAGS+=( -providerpath "${JAVA_KEYSTORE_PROVIDER_PATH}" )
+	return 0
 }
 
 install_intermediates()
@@ -598,6 +603,7 @@ install_intermediates()
 		say "\t✅ Intermediates ready!"
 		install_chain "${OS_SSL_ANCHORS}/ca-int" "${OS_SSL_SUFFIX}" < "${INT}"
 	fi
+	return 0
 }
 
 generate_certificate()
@@ -710,6 +716,7 @@ generate_java()
 	)
 	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to import the signed certificate into the keystore (rc=${?}): ${OUT}"
 	say "\t✅ The keystore is ready!"
+	return 0
 }
 
 generate_pem()
@@ -795,6 +802,7 @@ generate_pem()
 		> "${SSL_HAPROXY_CERTIFICATE}"
 	SECURE_FILES+=( "${SSL_HAPROXY_CERTIFICATE}" )
 	say "\t✅ Done!"
+	return 0
 }
 
 update_trusts()
@@ -849,6 +857,7 @@ finalize_java_variables()
 	# Render the final JVM options consuming all the above variables
 	#
 	export JAVAX_NET_SSL_OPTIONS="$(echo -n "${JAVAX_NET_SSL_OPTS[@]}" | envsubst)"
+	return 0
 }
 
 secure_permissions()
@@ -867,6 +876,7 @@ secure_permissions()
 		chown "${KEY_OWNER}:${ACM_GROUP}" "${SECURE_FILES[@]}"
 		chmod u=r,go= "${SECURE_FILES[@]}"
 	fi
+	return 0
 }
 
 finalize()
@@ -983,6 +993,7 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 	# Ok ... start doing the work!
 	#
 	################################################################################
+	export CONSTRUCT_CERTIFICATE="true"
 	await_if_necessary
 	download_trusts
 
