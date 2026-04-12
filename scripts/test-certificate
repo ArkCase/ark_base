@@ -17,8 +17,8 @@ require_file_readable "${SSL_PRIVATE_KEY_AES}"
 require_file_readable "${SSL_ROOT}"
 
 # Is the certificate properly signed?
-local CAT=( "${SSL_ROOT}" )
-is_file_readable "${SSL_INTERMEDIATES}" && CAT=( "${SSL_INTERMEDIATES}" "${CAT[@]}" )
+CAT=( "${SSL_ROOT}" )
+is_file_readable "${SSL_INT}" && CAT=( "${SSL_INT}" "${CAT[@]}" )
 OUT="$(openssl verify -CAfile <(cat "${CAT[@]}") "${SSL_CERTIFICATE}" 2>&1)" || fail "OpenSSL verification failed (rc=${?}): ${OUT}"
 
 # Are the secure key and the plaintext key the same?
