@@ -209,14 +209,6 @@ await_if_necessary()
 		set_or_default ACME_WAIT_TIMEOUT "20m"
 		wait_for_marker "${SSL_ENV_FILE}" "${ACME_WAIT_TIMEOUT}" || fail "ACME client initialization timed out"
 		quit "ACME rendering is complete, you can load the necessary variables from [${SSL_ENV_FILE}]"
-
-		# if certificate_is_valid ; then
-		#	ok "The certificate is ready! You can load the necessary variables from [${SSL_ENV_FILE}] for access"
-		#	CONSTRUCT_CERTIFICATE="false"
-		# else
-		#	err "The certificate validation failed - will generate a new certifiate"
-		#	CONSTRUCT_CERTIFICATE="true"
-		# fi
 	fi
 	return 0
 }
