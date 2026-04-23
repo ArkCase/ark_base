@@ -244,7 +244,7 @@ download_trusts()
 	# Wait up to 5 minutes for the CA to come up
 	MAX_WAIT=300
 	START="$(date +%s)"
-	say "🧾 Fetching the root CA certificate from [${ACME_HOST}]"
+	say "🏛️ Fetching the root CA certificate from [${ACME_HOST}]"
 	while true ; do
 		# TODO: What's the standard way to do this in ACME-land?
 		OUT="$(curl -k -fsSL -o "${ACME_ROOT_CA_ANCHOR}" "${ACME_URL}/roots.pem" 2>&1)" && break
