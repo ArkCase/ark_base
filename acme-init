@@ -644,16 +644,6 @@ generate_certificate()
 
 	install_intermediates "${SSL_CERTIFICATE}" || return ${?}
 
-	set_as_boolean SSL_DH_APPEND "false"
-	if as_boolean "${SSL_DH_APPEND}" ; then
-		set_or_default SSL_DH_SIZE "1024"
-		say "🛡️ Rendering the Diffie-Hellman parameters..."
-		OUT="$(openssl dhparam -outform pem -out "${SSL_DIR}/dh.pem" "${SSL_DH_SIZE}" 2>&1)"  || fail "Failed to generate the DH parameters (rc=${?}): ${OUT}"
-		say "💾 Appending Diffie-Hellman parameters to the certificate"
-		( echo "" ; cat "${SSL_DIR}/dh.pem" ) >> "${SSL_CERTIFICATE}" || fail "Failed to append the DH parameters to the certifiate"
-		ok "DH parameters appended!"
-	fi
-
 	say "🔒 Creating a AES (PKCS8) encrypted version of the key..."
 	CMD=(
 		openssl pkcs8 -topk8
@@ -683,8 +673,10 @@ generate_java()
 	export JAVA_KEY_ALIAS="acme"
 	export JAVA_KEY_PASSWORD="${JAVA_KEYSTORE_PASSWORD}"
 	export JAVA_KEY_PASSWORD_FILE="${JAVA_KEYSTORE_PASSWORD_FILE}"
+	export SSL_TOMCAT_CERTIFICATE="${SSL_DIR}/tomcat-${SSL_CERTIFICATE##*/}"
 
 	SSL_ENV_FILE_VARS+=(
+		SSL_TOMCAT_CERTIFICATE
 		JAVA_KEY_ALIAS
 		JAVA_KEY_PASSWORD_FILE
 		JAVA_KEY_PASSWORD
@@ -754,6 +746,30 @@ generate_java()
 		--password-file="${ACME_KEYSTORE_PASSWORD_FILE}"
 	)
 	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to get the certificate signature (rc=${?}): ${OUT}"
+
+	say "🔓 Creating the simplified Tomcat Certificate..."
+	CMD=(cp "${SSL_CERTIFICATE}" "${SSL_TOMCAT_CERTIFICATE}")
+	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to create a copy of the SSL Certificate for Tomcat use (rc=${?}): ${OUT}"
+
+	say "\t...sanitize the Tomcat Certificate"
+	CMD=(
+		sed -n -i
+			-e '/-----BEGIN CERTIFICATE-----/,$p' -e '/^-\+END CERTIFICATE-\+$/q'
+			"${SSL_TOMCAT_CERTIFICATE}"
+	)
+	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to sanitize the SSL Certificate for Tomcat use (rc=${?}): ${OUT}"
+	ok "Tomcat Certificate ready!"
+
+	set_as_boolean SSL_DH_APPEND "false"
+	if as_boolean "${SSL_DH_APPEND}" ; then
+		set_or_default SSL_DH_SIZE "1024"
+		is_fips && [ ${SSL_DH_SIZE} -lt 2048 ] && SSL_DH_SIZE=2048
+		say "🛡️ Rendering the Diffie-Hellman parameters..."
+		OUT="$(openssl dhparam -outform pem -out "${SSL_DIR}/dh.pem" "${SSL_DH_SIZE}" 2>&1)"  || fail "Failed to generate the DH parameters (rc=${?}): ${OUT}"
+		say "💾 Appending Diffie-Hellman parameters to the SSL Certificate for Tomcat use"
+		( echo "" ; cat "${SSL_DIR}/dh.pem" ) >> "${SSL_TOMCAT_CERTIFICATE}" || fail "Failed to append the DH parameters to the certifiate"
+		ok "DH parameters appended!"
+	fi
 	ok "The certificate was signed!"
 
 	# We import the signers as well
