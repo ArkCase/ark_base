@@ -145,8 +145,8 @@ install_chain()
 		if grep -q "END CERTIFICATE" "${n}" && is_ca "${n}" ; then
 			local SUBJECT="$(openssl x509 -noout -subject -in "${n}" | sed -e 's;^subject=;;g')"
 			local ISSUER="$(openssl x509 -noout -issuer -in "${n}" | sed -e 's;^issuer=;;g')"
-			say "\tInstalling certificate: ${SUBJECT}"
-			[ "${SUBJECT}" != "${ISSUER}" ] && say "\tIssued by: ${ISSUER}"
+			say "Installing certificate: ${SUBJECT}"
+			[ "${SUBJECT}" != "${ISSUER}" ] && say "Issued by: ${ISSUER}"
 			local TGT_NAME="${CERT_BASE_NAME}.${n##*/}${EXT}"
 			mv -f "${n}" "${TGT_NAME}"
 		else
@@ -252,7 +252,7 @@ download_trusts()
 	# Wait up to 5 minutes for the CA to come up
 	MAX_WAIT=300
 	START="$(date +%s)"
-	doing "Fetching the root CA certificate from [${ACME_HOST}]"
+	say "🧾 Fetching the root CA certificate from [${ACME_HOST}]"
 	while true ; do
 		# TODO: What's the standard way to do this in ACME-land?
 		OUT="$(curl -k -fsSL -o "${ACME_ROOT_CA_ANCHOR}" "${ACME_URL}/roots.pem" 2>&1)" && break
@@ -261,7 +261,7 @@ download_trusts()
 		[ $(( NOW - START )) -ge ${MAX_WAIT} ] && fail "Timed out trying to reach the CA issuer at [${ACME_URL}]"
 		sleep 5 || fail "Sleep interrupted trying to wait for [${ACME_URL}] - cannot continue"
 	done
-	say "\t✅ Fetch OK!"
+	ok "Fetch OK!"
 
 	################################################################################
 	#
@@ -271,26 +271,26 @@ download_trusts()
 	if step ca health &>/dev/null ; then
 		ok "Step CA client already initialized!"
 	else
-		doing "Initializing the Step CA Acme Client"
+		say "🛡️ Initializing the Step CA Acme Client"
 		step ca bootstrap -f \
 			--ca-url "${ACME_URL}" \
 			--fingerprint "$(step certificate fingerprint "${ACME_ROOT_CA_ANCHOR}")"
-		say "\t✅ Done!"
+		ok "Done!"
 	fi
 
 	########################################
 	# Copy the CA's certs into the SSL_DIR
 	########################################
-	doing "Copying the root CA into the target directory..."
+	say "💾 Copying the root CA into the target directory..."
 	cp -f "${ACME_ROOT_CA_ANCHOR}" "${SSL_DIR}/ca-root.pem"
-	say "\t✅ Done!"
+	ok "Done!"
 
 	################################################################################
 	#
 	# Trust the certificates we're told to trust
 	#
 	################################################################################
-	doing "Deploying the common trusted certificates from [${SSL_TRUSTS_DIR}]"
+	say "🔧 Deploying the common trusted certificates from [${SSL_TRUSTS_DIR}]"
 	is_dir_writable "${SSL_TRUSTS_DIR}" || mkdir -p "${SSL_TRUSTS_DIR}"
 	SSL_TRUSTS_DIR="$(readlink -f "${SSL_TRUSTS_DIR}")"
 
@@ -298,14 +298,14 @@ download_trusts()
 	while read cert ; do
 		CERT="${cert##*/}"
 		if [ ! -f "${cert}" ] ; then
-			say "\tWARNING: The certificate [${CERT}] is not a regular file, skipping"
+			warn "The certificate [${CERT}] is not a regular file, skipping"
 			continue
 		fi
 
 		case "${CERT,,}" in
 			# If the data is an actual certificate, copy it verbatim
 			*.pem | *.crt )
-				say "\tDeploying certificate [${CERT}]..."
+				say "Deploying certificate [${CERT}]..."
 				install_chain "${OS_SSL_ANCHORS}/${CERT%.*}" "${OS_SSL_SUFFIX}" < "${cert}"
 				;;
 
@@ -314,39 +314,39 @@ download_trusts()
 			*.url )
 				STR="$(<"${cert}")"
 				URL="$(expand_vars "${STR}" 2>&1)" || { warn "Failed to expand the environment variables contained in [${STR}] (rc=${?}): ${URL}" ; continue ; }
-				is_valid_url "${URL}" || fail "\tThe certificate [${CERT}] is invalid - the URL syntax is invalid: [${URL}]"
-				say "\tDownloading the certificate [${CERT}] from [${URL}]..."
-				download_chain "${OS_SSL_ANCHORS}/${CERT%.*}" "${URL}" "${OS_SSL_SUFFIX}" || fail "\tFailed to download the certificate [${CERT}] from the URL [${URL}]"
+				is_valid_url "${URL}" || fail "The certificate [${CERT}] is invalid - the URL syntax is invalid: [${URL}]"
+				say "Downloading the certificate [${CERT}] from [${URL}]..."
+				download_chain "${OS_SSL_ANCHORS}/${CERT%.*}" "${URL}" "${OS_SSL_SUFFIX}" || fail "Failed to download the certificate [${CERT}] from the URL [${URL}]"
 				;;
 
 			*.ssl )
 				STR="$(<"${cert}")"
 				SERVER="$(expand_vars "${STR}" 2>&1)" || { warn "Failed to expand the environment variables contained in [${STR}] (rc=${?}): ${SERVER}" ; continue ; }
-				[[ "${SERVER}" =~ ^(([^@]+)@)?(([^:]+):([0-9]+))(/(.*))?$ ]] || fail "\tThe certificate [${CERT}] is invalid - the server string [${SERVER}] did not match the required pattern ([serverName@]hostNameOrIP:port[/tls-protocol])"
+				[[ "${SERVER}" =~ ^(([^@]+)@)?(([^:]+):([0-9]+))(/(.*))?$ ]] || fail "The certificate [${CERT}] is invalid - the server string [${SERVER}] did not match the required pattern ([serverName@]hostNameOrIP:port[/tls-protocol])"
 				SERVER_NAME="${BASH_REMATCH[2]}"
 				HOST_NAME="${BASH_REMATCH[4]}"
 				PORT="${BASH_REMATCH[5]}"
 				TLS_PROTOCOL_STR="${BASH_REMATCH[6]}"
 				TLS_PROTOCOL="${BASH_REMATCH[7],,}"
 				if [ -n "${SERVER_NAME}" ] ; then
-					is_valid_hostname "${SERVER_NAME}" || fail "\tInvalid server name [${SERVER_NAME}] in spec [${SERVER}] from [${CERT}]"
+					is_valid_hostname "${SERVER_NAME}" || fail "Invalid server name [${SERVER_NAME}] in spec [${SERVER}] from [${CERT}]"
 				fi
-				is_valid_hostname "${HOST_NAME}" || fail "\tInvalid host name [${HOST_NAME}] in spec: [${SERVER}] from [${CERT}]"
-				is_valid_port "${PORT}" || fail "\tInvalid port number [${PORT}] in spec: [${SERVER}] from [${CERT}]"
+				is_valid_hostname "${HOST_NAME}" || fail "Invalid host name [${HOST_NAME}] in spec: [${SERVER}] from [${CERT}]"
+				is_valid_port "${PORT}" || fail "Invalid port number [${PORT}] in spec: [${SERVER}] from [${CERT}]"
 				DESCRIPTION="SSL server [${SERVER}]"
 				if [ -n "${TLS_PROTOCOL_STR}" ] ; then
 					case "${TLS_PROTOCOL}" in
 						ftp | imap | irc | ldap | lmtp | mysql | nntp | pop3 | postgres | sieve | smtp | xmpp | xmpp-server ) ;;
-						* ) fail "\tUnsupported TLS protocol [${TLS_PROTOCOL}]" ;;
+						* ) fail "Unsupported TLS protocol [${TLS_PROTOCOL}]" ;;
 					esac
 					DESCRIPTION="TLS server [${SERVER}] (${TLS_PROTOCOL})"
 				fi
-				say "\tDownloading the certificate [${CERT}] from the ${DESCRIPTION} ..."
-				download_from_port "${HOST_NAME}" "${SERVER_NAME}" "${PORT}" "${TLS_PROTOCOL}" "${OS_SSL_ANCHORS}" "${OS_SSL_SUFFIX}" || fail "\tFailed to download the certificate from the ${DESCRIPTION} as requested by [${CERT}]"
+				say "Downloading the certificate [${CERT}] from the ${DESCRIPTION} ..."
+				download_from_port "${HOST_NAME}" "${SERVER_NAME}" "${PORT}" "${TLS_PROTOCOL}" "${OS_SSL_ANCHORS}" "${OS_SSL_SUFFIX}" || fail "Failed to download the certificate from the ${DESCRIPTION} as requested by [${CERT}]"
 				;;
 
 			* )
-				say "\tWARNING: Don't know how to handle certificate [${CERT}], skipping"
+				warn "Don't know how to handle certificate [${CERT}], skipping"
 				continue
 				;;
 		esac
@@ -354,9 +354,9 @@ download_trusts()
 		(( ++COUNT ))
 	done < <(find "${SSL_TRUSTS_DIR}" -mindepth 1 -maxdepth 1 -name "ssl-trust-*.*" | sort)
 	if [ ${COUNT} -eq 0 ] ; then
-		say "\t✅ No certificates to deploy."
+		ok "No certificates to deploy."
 	else
-		say "\t✅ Deployed ${COUNT} certificates!"
+		ok "Deployed ${COUNT} certificates!"
 	fi
 	return 0
 }
@@ -609,9 +609,9 @@ install_intermediates()
 	local INT="${SSL_DIR}/ca-int.pem"
 	as_boolean "${KEYTOOL}" && GARBAGE+=( "${INT}" ) || export SSL_INT="${INT}"
 	if [ $(grep -c -- "-----END CERTIFICATE-----" "${SRC}") -gt 1 ] ; then
-		doing "Extracting the intermediate certificates from the signed bundle..."
+		say "📂 Extracting the intermediate certificates from the signed bundle..."
 		sed -e '0,/-----END CERTIFICATE-----/d' < "${SRC}" > "${INT}" || fail "Failed to extract the intermediate CAs from the signed bundle (rc=${?})"
-		say "\t✅ Intermediates ready!"
+		ok "Intermediates ready!"
 		install_chain "${OS_SSL_ANCHORS}/ca-int" "${OS_SSL_SUFFIX}" < "${INT}"
 	fi
 	return 0
@@ -619,136 +619,6 @@ install_intermediates()
 
 generate_certificate()
 {
-	################################################################################
-	#
-	# Render the certificate (different if Java is used vs. not)
-	#
-	################################################################################
-	local CMD="generate_java"
-	as_boolean "${KEYTOOL}" || CMD="generate_pem"
-	"${CMD}" || fail "Failed to generate the certificate"
-	ok "Certificate generation complete!"
-	return 0
-}
-
-generate_java()
-{
-	as_boolean "${KEYTOOL}" || return 0
-	doing "Rendering a ${JAVA_KEYSTORE_TYPE} Keystore with the new certificate & key..."
-
-	export JAVA_KEY_ALIAS="acme"
-	export JAVA_KEY_PASSWORD="${JAVA_KEYSTORE_PASSWORD}"
-	export JAVA_KEY_PASSWORD_FILE="${JAVA_KEYSTORE_PASSWORD_FILE}"
-
-	SSL_ENV_FILE_VARS+=(
-		JAVA_KEY_ALIAS
-		JAVA_KEY_PASSWORD_FILE
-		JAVA_KEY_PASSWORD
-	)
-
-	JAVAX_NET_SSL_OPTS+=(
-		-Djavax.net.ssl.keyAlias='${JAVA_KEY_ALIAS}'
-		-Djavax.net.ssl.keyPasswordFile='${JAVA_KEY_PASSWORD_FILE}'
-		-Djavax.net.ssl.keyPassword='${JAVA_KEY_PASSWORD}'
-	)
-
-	KT_SAN=""
-	[ "${#SAN[@]}" -gt 0 ] && doing "Rendering certificate for the following SANs:"
-	while read S ; do
-		say "\t${S}"
-		is_valid_ipv4 "${S}" && TYPE="ip" || TYPE="dns"
-		[ -n "${KT_SAN}" ] && KT_SAN+=","
-		KT_SAN+="${TYPE}:${S}"
-	done < <(echo "${SAN[@]}" | tr '[:space:]' '\n' | sed -e '/^\s*$/d' | sort -u)
-	[ -n "${KT_SAN}" ] && KT_SAN=(-ext "san=${KT_SAN}") || KT_SAN=()
-
-	# First, generate the certificate key
-	doing "Generating the certificate key..."
-	CMD=(
-		keytool -genkey
-			-alias "${JAVA_KEY_ALIAS}"
-			-dname "CN=${FQDN}"
-			-keyalg RSA
-			-keypass "$(<"${JAVA_KEYSTORE_PASSWORD_FILE}")"
-			-keysize 2048
-			-keystore "${JAVA_KEYSTORE}"
-			-storetype "${JAVA_KEYSTORE_TYPE}"
-			-storepass "$(<"${JAVA_KEYSTORE_PASSWORD_FILE}")"
-			-startdate "-90m"
-			-validity 548
-			"${KT_SAN[@]}"
-			"${KEYTOOL_PROVIDER_FLAGS[@]}"
-	)
-	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to generate the ${JAVA_KEYSTORE_TYPE} keystore (rc=${?}): ${OUT}"
-	ok "The key is ready!"
-
-	# Generate the CSR
-	doing "Generating the certificate signing request..."
-	CSR="$(mktemp --tmpdir="${SSL_DIR}" .csr.XXXXXXXX)" || fail "Failed to create a temporary CSR file"
-	GARBAGE+=( "${CSR}" )
-	CMD=(
-		keytool -certreq
-			-alias "${JAVA_KEY_ALIAS}"
-			-file "${CSR}"
-			-keystore "${JAVA_KEYSTORE}"
-			-keypass "$(<"${JAVA_KEYSTORE_PASSWORD_FILE}")"
-			-storetype "${JAVA_KEYSTORE_TYPE}"
-			-storepass "$(<"${JAVA_KEYSTORE_PASSWORD_FILE}")"
-			"${KT_SAN[@]}"
-			"${KEYTOOL_PROVIDER_FLAGS[@]}"
-	)
-	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to generate the CSR (rc=${?}): ${OUT}"
-	ok "The request is ready!"
-
-	# Get the CSR signed
-	TMP_CERT="$(mktemp --tmpdir="${SSL_DIR}" ".temp-cert-XXXXXXXX.pem")"
-	GARBAGE+=( "${TMP_CERT}" )
-	doing "Submitting the certificate signing request..."
-	step ca sign "${CSR}" "${TMP_CERT}" \
-		--force \
-		--not-before="-1h30m" \
-		--provisioner-password-file "${ACME_PASSWORD_FILE}" \
-		--password-file="${ACME_KEYSTORE_PASSWORD_FILE}" || fail "Failed to get the certificate signature"
-	ok "The certificate was signed!"
-
-	install_intermediates "${TMP_CERT}" || return ${?}
-
-	# We import the signers as well
-	doing "Importing the signed certificate into the keystore..."
-	CMD=(
-		keytool -import
-			-alias "${JAVA_KEY_ALIAS}"
-			-file "${TMP_CERT}"
-			-keystore "${JAVA_KEYSTORE}"
-			-noprompt
-			-storetype "${JAVA_KEYSTORE_TYPE}"
-			-storepass "$(<"${JAVA_KEYSTORE_PASSWORD_FILE}")"
-			"${KEYTOOL_PROVIDER_FLAGS[@]}"
-	)
-	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to import the signed certificate into the keystore (rc=${?}): ${OUT}"
-	say "\t✅ The keystore is ready!"
-	return 0
-}
-
-generate_pem()
-{
-	########################################
-	# No Java, use OpenSSL only
-	########################################
-	# Make sure our SAN list is unique, and
-	# sorted, and pre-pend the --san argument
-	SAN_ARG=()
-	[ "${#SAN[@]}" -gt 0 ] && doing "Rendering certificate for the following SANs:"
-	while read S ; do
-		say "\t${S}"
-		SAN_ARG+=( --san "${S}" )
-	done < <(echo "${SAN[@]}" | tr '[:space:]' '\n' | sed -e '/^\s*$/d' | sort -u)
-
-	# Note: the not-before is "back in time" to accommodate for clock skew. We've
-	# observed that when there's a bit of clock skew, certificate issuance goes
-	# kind of wonky b/c the cert will be OK, but it will not be accepted by the
-	# consuming processes until the not-before time has past. By using a back-in-time
-	# approach we ensure that the certificate will always be "born ready"
 	export SSL_PASSWORD_FILE="${ACME_KEYSTORE_PASSWORD_FILE}"
 	export SSL_PASSWORD="$(<"${SSL_PASSWORD_FILE}")"
 
@@ -771,7 +641,221 @@ generate_pem()
 		SSL_HAPROXY_CERTIFICATE
 	)
 
-	doing "Rendering a new certificate for this pod's use"
+	################################################################################
+	#
+	# Render the certificate (different if Java is used vs. not)
+	#
+	################################################################################
+	local CMD="generate_java"
+	as_boolean "${KEYTOOL}" || CMD="generate_pem"
+	"${CMD}" || fail "Failed to generate the certificate"
+
+	install_intermediates "${SSL_CERTIFICATE}" || return ${?}
+
+	set_as_boolean SSL_DH_APPEND "false"
+	if as_boolean "${SSL_DH_APPEND}" ; then
+		set_or_default SSL_DH_SIZE "1024"
+		say "🛡️ Rendering the Diffie-Hellman parameters..."
+		OUT="$(openssl dhparam -outform pem -out "${SSL_DIR}/dh.pem" "${SSL_DH_SIZE}" 2>&1)"  || fail "Failed to generate the DH parameters (rc=${?}): ${OUT}"
+		say "💾 Appending Diffie-Hellman parameters to the certificate"
+		( echo "" ; cat "${SSL_DIR}/dh.pem" ) >> "${SSL_CERTIFICATE}" || fail "Failed to append the DH parameters to the certifiate"
+		ok "DH parameters appended!"
+	fi
+
+	say "🔒 Creating a AES (PKCS8) encrypted version of the key..."
+	CMD=(
+		openssl pkcs8 -topk8
+			-nocrypt
+			-in "${SSL_PRIVATE_KEY}"
+			-out "${SSL_PRIVATE_KEY_AES}"
+			-v2 aes-256-cbc
+			-passout env:SSL_PASSWORD
+	)
+	OUT="$("${CMD[@]}" 2>&1)" \
+		&& ok "AES-256 (PKCS8) Encrypted key ready!" \
+		|| warn "Failed to create the AES-256 (PKCS8) Encrypted certificate key (rc=${?}): ${OUT}"
+
+	say "📜 Rendering the certificate files for HAProxy..."
+	cat "${SSL_CERTIFICATE}" "${SSL_ROOT}" "${SSL_PRIVATE_KEY}" > "${SSL_HAPROXY_CERTIFICATE}"
+	SECURE_FILES+=( "${SSL_HAPROXY_CERTIFICATE}" )
+
+	ok "Certificate generation complete!"
+	return 0
+}
+
+generate_java()
+{
+	as_boolean "${KEYTOOL}" || return 0
+	say "🔐 Rendering a ${JAVA_KEYSTORE_TYPE} Keystore with the new certificate & key..."
+
+	export JAVA_KEY_ALIAS="acme"
+	export JAVA_KEY_PASSWORD="${JAVA_KEYSTORE_PASSWORD}"
+	export JAVA_KEY_PASSWORD_FILE="${JAVA_KEYSTORE_PASSWORD_FILE}"
+
+	SSL_ENV_FILE_VARS+=(
+		JAVA_KEY_ALIAS
+		JAVA_KEY_PASSWORD_FILE
+		JAVA_KEY_PASSWORD
+	)
+
+	JAVAX_NET_SSL_OPTS+=(
+		-Djavax.net.ssl.keyAlias='${JAVA_KEY_ALIAS}'
+		-Djavax.net.ssl.keyPasswordFile='${JAVA_KEY_PASSWORD_FILE}'
+		-Djavax.net.ssl.keyPassword='${JAVA_KEY_PASSWORD}'
+	)
+
+	KT_SAN=""
+	[ "${#SAN[@]}" -gt 0 ] && say "📝 Rendering certificate for the following SANs:"
+	while read S ; do
+		say "\t${S}"
+		is_valid_ipv4 "${S}" && TYPE="ip" || TYPE="dns"
+		[ -n "${KT_SAN}" ] && KT_SAN+=","
+		KT_SAN+="${TYPE}:${S}"
+	done < <(echo "${SAN[@]}" | tr '[:space:]' '\n' | sed -e '/^\s*$/d' | sort -u)
+	[ -n "${KT_SAN}" ] && KT_SAN=(-ext "san=${KT_SAN}") || KT_SAN=()
+
+	# First, generate the certificate key
+	say "🔑 Generating the certificate key..."
+	CMD=(
+		keytool -genkey
+			-alias "${JAVA_KEY_ALIAS}"
+			-dname "CN=${FQDN}"
+			-keyalg RSA
+			-keypass "$(<"${JAVA_KEYSTORE_PASSWORD_FILE}")"
+			-keysize 2048
+			-keystore "${JAVA_KEYSTORE}"
+			-storetype "${JAVA_KEYSTORE_TYPE}"
+			-storepass "$(<"${JAVA_KEYSTORE_PASSWORD_FILE}")"
+			-startdate "-90m"
+			-validity 548
+			"${KT_SAN[@]}"
+			"${KEYTOOL_PROVIDER_FLAGS[@]}"
+	)
+	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to generate the ${JAVA_KEYSTORE_TYPE} keystore (rc=${?}): ${OUT}"
+	ok "The key is ready!"
+
+	# Generate the CSR
+	say "✍ Generating the certificate signing request..."
+	CSR="$(mktemp --tmpdir="${SSL_DIR}" .csr.XXXXXXXX)" || fail "Failed to create a temporary CSR file"
+	GARBAGE+=( "${CSR}" )
+	CMD=(
+		keytool -certreq
+			-alias "${JAVA_KEY_ALIAS}"
+			-file "${CSR}"
+			-keystore "${JAVA_KEYSTORE}"
+			-keypass "$(<"${JAVA_KEYSTORE_PASSWORD_FILE}")"
+			-storetype "${JAVA_KEYSTORE_TYPE}"
+			-storepass "$(<"${JAVA_KEYSTORE_PASSWORD_FILE}")"
+			"${KT_SAN[@]}"
+			"${KEYTOOL_PROVIDER_FLAGS[@]}"
+	)
+	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to generate the CSR (rc=${?}): ${OUT}"
+	ok "The request is ready!"
+
+	# Get the CSR signed
+	say "🔎︎ Submitting the certificate signing request..."
+	CMD=(
+		step ca sign "${CSR}" "${SSL_CERTIFICATE}"
+		--force
+		--not-before="-1h30m"
+		--provisioner-password-file "${ACME_PASSWORD_FILE}"
+		--password-file="${ACME_KEYSTORE_PASSWORD_FILE}"
+	)
+	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to get the certificate signature (rc=${?}): ${OUT}"
+	ok "The certificate was signed!"
+
+	# We import the signers as well
+	say "🔓 Importing the signed certificate into the keystore..."
+	CMD=(
+		keytool -import
+			-alias "${JAVA_KEY_ALIAS}"
+			-file "${SSL_CERTIFICATE}"
+			-keystore "${JAVA_KEYSTORE}"
+			-noprompt
+			-storetype "${JAVA_KEYSTORE_TYPE}"
+			-storepass "$(<"${JAVA_KEYSTORE_PASSWORD_FILE}")"
+			"${KEYTOOL_PROVIDER_FLAGS[@]}"
+	)
+	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to import the signed certificate into the keystore (rc=${?}): ${OUT}"
+	ok "The keystore is ready!"
+
+	# Esport the private key
+	say "🔑 Extracting the private key into a PEM-encoded file"
+	TEMP_KEYSTORE="$(mktemp --tmpdir="${SSL_DIR}" ".temp-keystore-XXXXXXXX.pkcs12")"
+	say "\t...create a temporary keystore"
+	# We need to nuke it, otherwise keytool will complain
+	rm -f "${TEMP_KEYSTORE}" &>/dev/null || true
+	GARBAGE+=( "${TEMP_KEYSTORE}" )
+	CMD=(
+		keytool -importkeystore
+			-destkeystore "${TEMP_KEYSTORE}"
+			-deststorepass "$(<"${JAVA_KEYSTORE_PASSWORD_FILE}")"
+			-deststoretype "PKCS12"
+			-noprompt
+			-srckeystore "${JAVA_KEYSTORE}"
+			-srcstorepass "$(<"${JAVA_KEYSTORE_PASSWORD_FILE}")"
+			-srcstoretype "${JAVA_KEYSTORE_TYPE}"
+			"${KEYTOOL_PROVIDER_FLAGS[@]}"
+	)
+	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to export the private key to the temporary keystore (rc=${?}): ${OUT}"
+
+	# Spit out the plaintext private key
+	say "\t...extract the plaintext key"
+	CMD=(
+		openssl pkcs12
+			-in "${TEMP_KEYSTORE}"
+			-noenc
+			-nocerts
+			-nomacver
+			-passin "file:${JAVA_KEYSTORE_PASSWORD_FILE}"
+			-out "${SSL_PRIVATE_KEY}"
+	)
+	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to extract the private key from the temporary keystore (rc=${?}): ${OUT}"
+	SECURE_FILES+=( "${SSL_PRIVATE_KEY}" )
+
+	# Sanitize the private key to remove any extraneous text
+	say "\t...sanitize the temporary file"
+	CMD=(
+		sed -n -i
+			-e '/-----BEGIN PRIVATE KEY-----/,$p' -e '/^-\+END PRIVATE KEY-\+$/q'
+			"${SSL_PRIVATE_KEY}"
+	)
+	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to sanitize the private key (rc=${?}): ${OUT}"
+
+	# Slight editing for consistency with keys generated by step-ca and openssl
+	say "\t...final touches"
+	CMD=(
+		sed -i
+			-e 's;PRIVATE KEY;RSA PRIVATE KEY;g'
+			"${SSL_PRIVATE_KEY}"
+	)
+	OUT="$("${CMD[@]}")" || fail "Failed to prune out the extracted private key (rc=${?}): ${OUT}"
+	ok "Private key extracted!"
+
+	ok "Java Keystore Ready!"
+	return 0
+}
+
+generate_pem()
+{
+	########################################
+	# No Java, use OpenSSL only
+	########################################
+	# Make sure our SAN list is unique, and
+	# sorted, and pre-pend the --san argument
+	SAN_ARG=()
+	[ "${#SAN[@]}" -gt 0 ] && say "📝 Rendering certificate for the following SANs:"
+	while read S ; do
+		say "\t${S}"
+		SAN_ARG+=( --san "${S}" )
+	done < <(echo "${SAN[@]}" | tr '[:space:]' '\n' | sed -e '/^\s*$/d' | sort -u)
+
+	# Note: the not-before is "back in time" to accommodate for clock skew. We've
+	# observed that when there's a bit of clock skew, certificate issuance goes
+	# kind of wonky b/c the cert will be OK, but it will not be accepted by the
+	# consuming processes until the not-before time has past. By using a back-in-time
+	# approach we ensure that the certificate will always be "born ready"
+	say "🔐 Rendering a new certificate for this pod's use"
 	step ca certificate \
 		"${FQDN}" "${SSL_CERTIFICATE}" "${SSL_PRIVATE_KEY}" \
 		"${SAN_ARG[@]}" \
@@ -781,48 +865,18 @@ generate_pem()
 		--kty RSA \
 		--provisioner-password-file "${ACME_PASSWORD_FILE}" \
 		--password-file="${SSL_PASSWORD_FILE}"
-
-	install_intermediates "${SSL_CERTIFICATE}" || return ${?}
-
-	set_as_boolean SSL_DH_APPEND "false"
-	if as_boolean "${SSL_DH_APPEND}" ; then
-		set_or_default SSL_DH_SIZE "1024"
-		doing "Rendering the Diffie-Hellman parameters..."
-		OUT="$(openssl dhparam -outform pem -out "${SSL_DIR}/dh.pem" "${SSL_DH_SIZE}" 2>&1)"  || fail "Failed to generate the DH parameters (rc=${?}): ${OUT}"
-		doing "Appending Diffie-Hellman parameters to the certificate"
-		( echo "" ; cat "${SSL_DIR}/dh.pem" ) >> "${SSL_CERTIFICATE}" || fail "Failed to append the DH parameters to the certifiate"
-		say "\tDH parameters appended!"
-	fi
 	SECURE_FILES+=( "${SSL_PRIVATE_KEY}" )
-
-	doing "Creating a AES (PKCS8) encrypted version of the key..."
-	openssl pkcs8 -topk8 \
-		-nocrypt \
-		-in "${SSL_PRIVATE_KEY}" \
-		-out "${SSL_PRIVATE_KEY_AES}" \
-		-v2 aes-256-cbc \
-		-passout env:SSL_PASSWORD \
-		&& say "\t✅ AES-256 (PKCS8) Encrypted key ready!" \
-		|| warn "Failed to create the AES-256 (PKCS8) Encrypted certificate key"
-
-	doing "Rendering the certificate files for HAProxy..."
-	cat \
-		"${SSL_CERTIFICATE}" \
-		"${SSL_ROOT}" \
-		"${SSL_PRIVATE_KEY}" \
-		> "${SSL_HAPROXY_CERTIFICATE}"
-	SECURE_FILES+=( "${SSL_HAPROXY_CERTIFICATE}" )
-	say "\t✅ Done!"
+	ok "SSL Certificate Ready!"
 	return 0
 }
 
 update_trusts()
 {
-	doing "Updating the trusted certificates..."
+	say "🛠️ Updating the trusted certificates..."
 	chown -R root:root "${OS_SSL_ANCHORS}"
 	chmod -R u=rwX,go=rX "${OS_SSL_ANCHORS}"
 	OUT="$(execute "${OS_SSL_UPDATE_CMD[@]}" 2>&1)" || fail "Failed to update the CA trusts (rc=${?}): ${OUT}"
-	say "\t✅ CA trusts updated system-wide!"
+	ok "CA trusts updated system-wide!"
 
 	as_boolean "${KEYTOOL}" && import_java_trusts
 	return 0
@@ -831,7 +885,7 @@ update_trusts()
 import_java_trusts()
 {
 	as_boolean "${KEYTOOL}" || return 0
-	doing "Adding the global trusts to the ${JAVA_KEYSTORE_TYPE} keystore!"
+	say "🔓 Adding the global trusts to the ${JAVA_KEYSTORE_TYPE} keystore!"
 	CMD=(
 		keytool -importkeystore
 			-destkeystore "${JAVA_KEYSTORE}"
@@ -844,7 +898,7 @@ import_java_trusts()
 			"${KEYTOOL_PROVIDER_FLAGS[@]}"
 	)
 	OUT="$("${CMD[@]}" 2>&1)" || fail "Could not append the global trusts from [${JAVA_GLOBAL_TRUSTSTORE}] (rc=${?}): ${OUT}"
-	say "\t✅ Global trusts added!"
+	ok "Global trusts added!"
 	return 0
 }
 
@@ -875,14 +929,14 @@ secure_permissions()
 {
 	# By default, owned by root but readable by everyone
 	chown -R "root:${ACM_GROUP}" "${SSL_DIR}"
-	chmod -R ug=rX,o= "${SSL_DIR}"
+	chmod -R a=rX "${SSL_DIR}"
 
 	# Secure the most sensitive files so they're only readable
 	# by the user who will be consuming them ... the other files
 	# can easily be world-readable since they're all encrypted
 	# one way or another, or are meant to be publicly-accessible
 	if [ ${#SECURE_FILES[@]} -gt 0 ] ; then
-		doing "Securing the private SSL files: [ ${SECURE_FILES[@]@Q} ]"
+		say "🛡️ Securing the private SSL files: [ ${SECURE_FILES[@]@Q} ]"
 		[ -v SUDO_USER ] && KEY_OWNER="${SUDO_USER}" || KEY_OWNER="root"
 		chown "${KEY_OWNER}:${ACM_GROUP}" "${SECURE_FILES[@]}"
 		chmod u=r,go= "${SECURE_FILES[@]}"
