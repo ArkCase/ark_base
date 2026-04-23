@@ -762,10 +762,8 @@ generate_java()
 
 	set_as_boolean SSL_DH_APPEND "false"
 	if as_boolean "${SSL_DH_APPEND}" ; then
-		set_or_default SSL_DH_SIZE "1024"
-		is_fips && [ ${SSL_DH_SIZE} -lt 2048 ] && SSL_DH_SIZE=2048
 		say "🛡️ Rendering the Diffie-Hellman parameters..."
-		OUT="$(openssl dhparam -outform pem -out "${SSL_DIR}/dh.pem" "${SSL_DH_SIZE}" 2>&1)"  || fail "Failed to generate the DH parameters (rc=${?}): ${OUT}"
+		OUT="$(openssl dhparam -outform pem -out "${SSL_DIR}/dh.pem" 2048 2>&1)"  || fail "Failed to generate the DH parameters (rc=${?}): ${OUT}"
 		say "💾 Appending Diffie-Hellman parameters to the SSL Certificate for Tomcat use"
 		( echo "" ; cat "${SSL_DIR}/dh.pem" ) >> "${SSL_TOMCAT_CERTIFICATE}" || fail "Failed to append the DH parameters to the certifiate"
 		ok "DH parameters appended!"
