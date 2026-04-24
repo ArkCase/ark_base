@@ -5,6 +5,9 @@ set -euo pipefail
 . /.functions
 export LOCK="$(readlink -f "${0}")"
 
+SSL_DIRECTORIES="$(find-ssl-dirs)" || fail "Failed to compute the local SSL configuration"
+source <(echo -n "${SSL_DIRECTORIES}") || fail "Failed to apply the local SSL configuration"
+
 #
 # Set some defaults
 #
@@ -15,6 +18,12 @@ export DEFAULT_JAVA_SSL_KEYSTORE_TYPE="BCFKS"
 export DEFAULT_JAVA_SSL_KEYSTORE_PROVIDER="BCFIPS"
 export DEFAULT_JAVA_SSL_KEYSTORE_PROVIDER_CLASS="org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider"
 export DEFAULT_JAVA_SSL_KEYSTORE_PROVIDER_PATH="${FIPS_DIR}"
+
+export DEFAULT_JAVA_GLOBAL_TRUSTSTORE_TYPE="JKS"
+export DEFAULT_JAVA_GLOBAL_TRUSTSTORE="${OS_SSL_JAVA_CACERTS}"
+export DEFAULT_JAVA_GLOBAL_TRUSTSTORE_PASSWORD="changeit"
+export DEFAULT_JAVA_GLOBAL_TRUSTSTORE_PROVIDER="SUN"
+export DEFAULT_JAVA_GLOBAL_TRUSTSTORE_PROVIDER_CLASS="sun.security.provider.Sun"
 
 # Just for safety's sake
 cd /
@@ -474,6 +483,36 @@ compute_certificate_san()
 	return 0
 }
 
+initialize()
+{
+	export SSL_PASSWORD_FILE="${ACME_KEYSTORE_PASSWORD_FILE}"
+	export SSL_PASSWORD="$(<"${SSL_PASSWORD_FILE}")"
+
+	export SSL_CERTIFICATE="${SSL_DIR}/cert.pem"
+	export SSL_PRIVATE_KEY="${SSL_DIR}/cert.key"
+	export SSL_PRIVATE_KEY_AES="${SSL_DIR}/cert.key.aes"
+	export SSL_ROOT="${SSL_DIR}/ca-root.pem"
+	export SSL_INT="${SSL_DIR}/ca-int.pem"
+	export SSL_CERTIFICATE_HAPROXY="${SSL_DIR}/haproxy-cert.pem"
+	export SSL_CA_TRUSTS="${OS_SSL_CA_TRUSTS}"
+
+	SSL_ENV_FILE_VARS+=(
+		SSL_PASSWORD
+		SSL_PASSWORD_FILE
+
+		SSL_PRIVATE_KEY
+		SSL_PRIVATE_KEY_AES
+		SSL_CERTIFICATE
+		SSL_CERTIFICATE_HAPROXY
+
+		SSL_INT
+		SSL_ROOT
+		SSL_CA_TRUSTS
+	)
+
+	initialize_java
+}
+
 initialize_java()
 {
 	################################################################################
@@ -530,9 +569,14 @@ initialize_java()
 	export JAVA_TRUSTSTORE_PROVIDER_PATH="${JAVA_KEYSTORE_PROVIDER_PATH}"
 	export JAVA_TRUSTSTORE_PROVIDER_ARGS="${JAVA_KEYSTORE_PROVIDER_ARGS}"
 
-	export JAVA_GLOBAL_TRUSTSTORE="${OS_SSL_JAVA_CACERTS}"
-	export JAVA_GLOBAL_TRUSTSTORE_TYPE="JKS"
-	export JAVA_GLOBAL_TRUSTSTORE_PASSWORD="changeit"
+	# These will either already be set in the environment, or
+	# will be populated by their matching DEFAULT_* values
+	# defined at the top of this file
+	set_or_default JAVA_GLOBAL_TRUSTSTORE_TYPE
+	set_or_default JAVA_GLOBAL_TRUSTSTORE
+	set_or_default JAVA_GLOBAL_TRUSTSTORE_PASSWORD
+	set_or_default JAVA_GLOBAL_TRUSTSTORE_PROVIDER
+	set_or_default JAVA_GLOBAL_TRUSTSTORE_PROVIDER_CLASS
 
 	#
 	# Add the Java variables to the environment file
@@ -557,9 +601,11 @@ initialize_java()
 		JAVA_TRUSTSTORE_PROVIDER_PATH
 		JAVA_TRUSTSTORE_PROVIDER_ARGS
 
-		JAVA_GLOBAL_TRUSTSTORE
 		JAVA_GLOBAL_TRUSTSTORE_TYPE
+		JAVA_GLOBAL_TRUSTSTORE
 		JAVA_GLOBAL_TRUSTSTORE_PASSWORD
+		JAVA_GLOBAL_TRUSTSTORE_PROVIDER
+		JAVA_GLOBAL_TRUSTSTORE_PROVIDER_CLASS
 	)
 
 	JAVAX_NET_SSL_OPTS=(
@@ -609,31 +655,6 @@ install_intermediates()
 
 generate_certificate()
 {
-	export SSL_PASSWORD_FILE="${ACME_KEYSTORE_PASSWORD_FILE}"
-	export SSL_PASSWORD="$(<"${SSL_PASSWORD_FILE}")"
-
-	export SSL_CERTIFICATE="${SSL_DIR}/cert.pem"
-	export SSL_PRIVATE_KEY="${SSL_DIR}/cert.key"
-	export SSL_PRIVATE_KEY_AES="${SSL_DIR}/cert.key.aes"
-	export SSL_ROOT="${SSL_DIR}/ca-root.pem"
-	export SSL_INT="${SSL_DIR}/ca-int.pem"
-	export SSL_CERTIFICATE_HAPROXY="${SSL_DIR}/haproxy-cert.pem"
-	export SSL_CA_TRUSTS="${OS_SSL_CA_TRUSTS}"
-
-	SSL_ENV_FILE_VARS+=(
-		SSL_PASSWORD
-		SSL_PASSWORD_FILE
-
-		SSL_PRIVATE_KEY
-		SSL_PRIVATE_KEY_AES
-		SSL_CERTIFICATE
-		SSL_CERTIFICATE_HAPROXY
-
-		SSL_INT
-		SSL_ROOT
-		SSL_CA_TRUSTS
-	)
-
 	################################################################################
 	#
 	# Render the certificate (different if Java is used vs. not)
@@ -786,7 +807,9 @@ generate_java()
 	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to import the signed certificate into the keystore (rc=${?}): ${OUT}"
 	ok "The keystore is ready!"
 
-	# Esport the private key
+	# Export the private key as PKCS12 so it can be dumped
+	# to PEM format using OpenSSL commands, which in turn
+	# makes it readable by processes using OpenSSL
 	say "🔑 Extracting the private key into a PEM-encoded file"
 	TEMP_KEYSTORE="$(mktemp --tmpdir="${SSL_DIR}" ".temp-keystore-XXXXXXXX.pkcs12")"
 	say "\t...create a temporary keystore"
@@ -795,13 +818,19 @@ generate_java()
 	GARBAGE+=( "${TEMP_KEYSTORE}" )
 	CMD=(
 		keytool -importkeystore
+			-destalias "${JAVA_KEY_ALIAS}"
+			-destkeypass "${JAVA_KEY_PASSWORD}"
 			-destkeystore "${TEMP_KEYSTORE}"
 			-deststorepass "$(<"${JAVA_KEYSTORE_PASSWORD_FILE}")"
 			-deststoretype "PKCS12"
+			-destprovidername "SUN"
 			-noprompt
+			-srcalias "${JAVA_KEY_ALIAS}"
+			-srckeypass "${JAVA_KEY_PASSWORD}"
 			-srckeystore "${JAVA_KEYSTORE}"
 			-srcstorepass "$(<"${JAVA_KEYSTORE_PASSWORD_FILE}")"
 			-srcstoretype "${JAVA_KEYSTORE_TYPE}"
+			-srcprovidername "${JAVA_KEYSTORE_PROVIDER}"
 			"${KEYTOOL_PROVIDER_FLAGS[@]}"
 	)
 	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to export the private key to the temporary keystore (rc=${?}): ${OUT}"
@@ -898,10 +927,12 @@ import_java_trusts()
 			-destkeystore "${JAVA_KEYSTORE}"
 			-deststorepass "$(<"${JAVA_KEYSTORE_PASSWORD_FILE}")"
 			-deststoretype "${JAVA_KEYSTORE_TYPE}"
+			-destprovidername "${JAVA_KEYSTORE_PROVIDER}"
 			-noprompt
 			-srckeystore "${JAVA_GLOBAL_TRUSTSTORE}"
 			-srcstorepass "${JAVA_GLOBAL_TRUSTSTORE_PASSWORD}"
 			-srcstoretype "${JAVA_GLOBAL_TRUSTSTORE_TYPE}"
+			-srcprovidername "${JAVA_GLOBAL_TRUSTSTORE_PROVIDER}"
 			"${KEYTOOL_PROVIDER_FLAGS[@]}"
 	)
 	OUT="$("${CMD[@]}" 2>&1)" || fail "Could not append the global trusts from [${JAVA_GLOBAL_TRUSTSTORE}] (rc=${?}): ${OUT}"
@@ -1026,9 +1057,6 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 	[ -n "${ACM_GROUP}" ] || fail "The ACM_GROUP environment variable is REQUIRED"
 	getent group "${ACM_GROUP}" &>/dev/null || fail "The group [${ACM_GROUP}] does not exist"
 
-	SSL_DIRECTORIES="$(find-ssl-dirs)" || fail "Failed to compute the local SSL configuration"
-	source <(echo -n "${SSL_DIRECTORIES}") || fail "Failed to apply the local SSL configuration"
-
 	#
 	# Find the Java keytool, if it's installed
 	#
@@ -1082,7 +1110,7 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 		GARBAGE=()
 
 		generate_password
-		initialize_java
+		initialize
 
 		################################################################################
 		#
