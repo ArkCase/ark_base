@@ -598,13 +598,11 @@ install_intermediates()
 {
 	# Extract the certificate and any intermediates chain (don't import, will happen automatically later)
 	local SRC="${1}"
-	local INT="${SSL_DIR}/ca-int.pem"
-	as_boolean "${KEYTOOL}" && GARBAGE+=( "${INT}" ) || export SSL_INT="${INT}"
 	if [ $(grep -c -- "-----END CERTIFICATE-----" "${SRC}") -gt 1 ] ; then
 		say "📂 Extracting the intermediate certificates from the signed bundle..."
-		sed -e '0,/-----END CERTIFICATE-----/d' < "${SRC}" > "${INT}" || fail "Failed to extract the intermediate CAs from the signed bundle (rc=${?})"
+		sed -e '0,/-----END CERTIFICATE-----/d' < "${SRC}" > "${SSL_INT}" || fail "Failed to extract the intermediate CAs from the signed bundle (rc=${?})"
 		ok "Intermediates ready!"
-		install_chain "${OS_SSL_ANCHORS}/ca-int" "${OS_SSL_SUFFIX}" < "${INT}"
+		install_chain "${OS_SSL_ANCHORS}/ca-int" "${OS_SSL_SUFFIX}" < "${SSL_INT}"
 	fi
 	return 0
 }
@@ -619,7 +617,7 @@ generate_certificate()
 	export SSL_PRIVATE_KEY_AES="${SSL_DIR}/cert.key.aes"
 	export SSL_ROOT="${SSL_DIR}/ca-root.pem"
 	export SSL_INT="${SSL_DIR}/ca-int.pem"
-	export SSL_HAPROXY_CERTIFICATE="${SSL_DIR}/haproxy-cert.pem"
+	export SSL_CERTIFICATE_HAPROXY="${SSL_DIR}/haproxy-cert.pem"
 
 	SSL_ENV_FILE_VARS+=(
 		SSL_PASSWORD
@@ -630,7 +628,7 @@ generate_certificate()
 		SSL_PRIVATE_KEY_AES
 		SSL_INT
 		SSL_ROOT
-		SSL_HAPROXY_CERTIFICATE
+		SSL_CERTIFICATE_HAPROXY
 	)
 
 	################################################################################
@@ -658,8 +656,8 @@ generate_certificate()
 		|| warn "Failed to create the AES-256 (PKCS8) Encrypted certificate key (rc=${?}): ${OUT}"
 
 	say "📜 Rendering the certificate files for HAProxy..."
-	cat "${SSL_CERTIFICATE}" "${SSL_ROOT}" "${SSL_PRIVATE_KEY}" > "${SSL_HAPROXY_CERTIFICATE}"
-	SECURE_FILES+=( "${SSL_HAPROXY_CERTIFICATE}" )
+	cat "${SSL_CERTIFICATE}" "${SSL_ROOT}" "${SSL_PRIVATE_KEY}" > "${SSL_CERTIFICATE_HAPROXY}"
+	SECURE_FILES+=( "${SSL_CERTIFICATE_HAPROXY}" )
 
 	ok "Certificate generation complete!"
 	return 0
@@ -673,10 +671,10 @@ generate_java()
 	export JAVA_KEY_ALIAS="acme"
 	export JAVA_KEY_PASSWORD="${JAVA_KEYSTORE_PASSWORD}"
 	export JAVA_KEY_PASSWORD_FILE="${JAVA_KEYSTORE_PASSWORD_FILE}"
-	export SSL_TOMCAT_CERTIFICATE="${SSL_DIR}/tomcat-${SSL_CERTIFICATE##*/}"
+	export SSL_CERTIFICATE_TOMCAT="${SSL_DIR}/tomcat-${SSL_CERTIFICATE##*/}"
 
 	SSL_ENV_FILE_VARS+=(
-		SSL_TOMCAT_CERTIFICATE
+		SSL_CERTIFICATE_TOMCAT
 		JAVA_KEY_ALIAS
 		JAVA_KEY_PASSWORD_FILE
 		JAVA_KEY_PASSWORD
@@ -748,14 +746,14 @@ generate_java()
 	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to get the certificate signature (rc=${?}): ${OUT}"
 
 	say "🔓 Creating the simplified Tomcat Certificate..."
-	CMD=(cp "${SSL_CERTIFICATE}" "${SSL_TOMCAT_CERTIFICATE}")
+	CMD=(cp "${SSL_CERTIFICATE}" "${SSL_CERTIFICATE_TOMCAT}")
 	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to create a copy of the SSL Certificate for Tomcat use (rc=${?}): ${OUT}"
 
 	say "\t...sanitize the Tomcat Certificate"
 	CMD=(
 		sed -n -i
 			-e '/-----BEGIN CERTIFICATE-----/,$p' -e '/^-\+END CERTIFICATE-\+$/q'
-			"${SSL_TOMCAT_CERTIFICATE}"
+			"${SSL_CERTIFICATE_TOMCAT}"
 	)
 	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to sanitize the SSL Certificate for Tomcat use (rc=${?}): ${OUT}"
 	ok "Tomcat Certificate ready!"
@@ -765,7 +763,7 @@ generate_java()
 		say "🛡️ Rendering the Diffie-Hellman parameters..."
 		OUT="$(openssl dhparam -outform pem -out "${SSL_DIR}/dh.pem" 2048 2>&1)"  || fail "Failed to generate the DH parameters (rc=${?}): ${OUT}"
 		say "💾 Appending Diffie-Hellman parameters to the SSL Certificate for Tomcat use"
-		( echo "" ; cat "${SSL_DIR}/dh.pem" ) >> "${SSL_TOMCAT_CERTIFICATE}" || fail "Failed to append the DH parameters to the certifiate"
+		( echo "" ; cat "${SSL_DIR}/dh.pem" ) >> "${SSL_CERTIFICATE_TOMCAT}" || fail "Failed to append the DH parameters to the certifiate"
 		ok "DH parameters appended!"
 	fi
 	ok "The certificate was signed!"
