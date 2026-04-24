@@ -8,30 +8,39 @@ print_for_id()
 	local ID="${1}"
 	local VERSION="${2:-}"
 
-	local OS_SSL_CACERTS=""
+	local OS_SSL_DIR=""
 	local OS_SSL_ANCHORS=""
+	local OS_SSL_JAVA_CACERTS=""
 	local OS_SSL_UPDATE_CMD=()
+	local OS_SSL_SUFFIX=""
+	local OS_SSL_CA_TRUSTS=""
 	case "${ID,,}" in
 
 		ubuntu | debian )
+			OS_SSL_DIR="/etc/ssl"
 			OS_SSL_ANCHORS="/usr/local/share/ca-certificates"
-			OS_SSL_CACERTS="/etc/ssl/certs/java/cacerts"
+			local CERTS_HOME="${OS_SSL_DIR}/certs"
+			OS_SSL_JAVA_CACERTS="${CERTS_HOME}/java/cacerts"
 			OS_SSL_UPDATE_CMD=( /usr/sbin/update-ca-certificates --fresh )
 			OS_SSL_SUFFIX="crt"
+			OS_SSL_CA_TRUSTS="${CERTS_HOME}/ca-certificates.${OS_SSL_SUFFIX}"
 			;;
 
 		rocky | centos | rhel | fedora )
-			local TRUSTS_HOME="/etc/pki/ca-trust"
+			OS_SSL_DIR="/etc/pki"
+			local TRUSTS_HOME="${OS_SSL_DIR}/ca-trust"
+			local TRUSTS_EXTRACTED="${TRUSTS_HOME}/extracted"
 			OS_SSL_ANCHORS="${TRUSTS_HOME}/source/anchors"
-			OS_SSL_CACERTS="${TRUSTS_HOME}/extracted/java/cacerts"
+			OS_SSL_JAVA_CACERTS="${TRUSTS_EXTRACTED}/java/cacerts"
 			OS_SSL_UPDATE_CMD=( /usr/bin/update-ca-trust extract )
 			OS_SSL_SUFFIX="pem"
+			OS_SSL_CA_TRUSTS="${TRUSTS_EXTRACTED}/pem/tls-ca-bundle.${OS_SSL_SUFFIX}"
 			;;
 
 		* ) return 1 ;;
 	esac
 
-	for VAR in OS_SSL_CACERTS OS_SSL_ANCHORS OS_SSL_UPDATE_CMD OS_SSL_SUFFIX ; do
+	for VAR in "${!OS_SSL_@}" ; do
 		declare -p "${VAR}"
 	done
 	return 0

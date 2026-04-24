@@ -618,17 +618,20 @@ generate_certificate()
 	export SSL_ROOT="${SSL_DIR}/ca-root.pem"
 	export SSL_INT="${SSL_DIR}/ca-int.pem"
 	export SSL_CERTIFICATE_HAPROXY="${SSL_DIR}/haproxy-cert.pem"
+	export SSL_CA_TRUSTS="${OS_SSL_CA_TRUSTS}"
 
 	SSL_ENV_FILE_VARS+=(
 		SSL_PASSWORD
 		SSL_PASSWORD_FILE
 
-		SSL_CERTIFICATE
 		SSL_PRIVATE_KEY
 		SSL_PRIVATE_KEY_AES
+		SSL_CERTIFICATE
+		SSL_CERTIFICATE_HAPROXY
+
 		SSL_INT
 		SSL_ROOT
-		SSL_CERTIFICATE_HAPROXY
+		SSL_CA_TRUSTS
 	)
 
 	################################################################################
