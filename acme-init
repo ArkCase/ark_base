@@ -991,7 +991,6 @@ finalize()
 
 	# Shortcut - die early!
 	as_boolean "${RESULT_OK}" || return 0
-	as_boolean "${CONSTRUCT_CERTIFICATE}" || return 0
 
 	# Output the environment file
 	local DIR="$(dirname "${SSL_ENV_FILE}")"
@@ -1096,40 +1095,32 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 	# Ok ... start doing the work!
 	#
 	################################################################################
-	export CONSTRUCT_CERTIFICATE="true"
 	await_if_necessary
 	download_trusts
 
-	# If we weren't in charge of constructing the certificate, then we just do
-	# the trusts and the local cert updates
-	if as_boolean "${CONSTRUCT_CERTIFICATE}" ; then
+	# This array will contain the list of (absolute) paths for all
+	# files whose ownership and permissions will be set to the most
+	# restrictive of all: only readable by the owner
+	SECURE_FILES=()
 
-		# This array will contain the list of (absolute) paths for all
-		# files whose ownership and permissions will be set to the most
-		# restrictive of all: only readable by the owner
-		SECURE_FILES=()
+	# This helps us do cleanup on exit
+	GARBAGE=()
 
-		# This helps us do cleanup on exit
-		GARBAGE=()
+	generate_password
+	initialize
 
-		generate_password
-		initialize
-
-		################################################################################
-		#
-		# Generate our new certificates
-		#
-		################################################################################
-		set_or_default ACME_PASSWORD_FILE "/.acme.password"
-		if [ -f "${ACME_PASSWORD_FILE}" ] ; then
-			compute_certificate_san
-			ensure_dir "${SSL_DIR}"
-			generate_certificate
-		else
-			err "Couldn't find the provisioner password file at [${ACME_PASSWORD_FILE}], will not generate any new certificates or keystores"
-		fi
+	################################################################################
+	#
+	# Generate our new certificates
+	#
+	################################################################################
+	set_or_default ACME_PASSWORD_FILE "/.acme.password"
+	if [ -f "${ACME_PASSWORD_FILE}" ] ; then
+		compute_certificate_san
+		ensure_dir "${SSL_DIR}"
+		generate_certificate
 	else
-		ok "No certificate generation is required"
+		err "Couldn't find the provisioner password file at [${ACME_PASSWORD_FILE}], will not generate any new certificates or keystores"
 	fi
 
 	update_trusts
