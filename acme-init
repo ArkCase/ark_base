@@ -86,7 +86,10 @@ wait_for_marker()
 	local FIRST="true"
 	local START="$(date +%s)"
 	while ! marker_exists "${MARKER}" ; do
-		"${FIRST}" && waiting "Waiting for the ACME certificates to be initialized (up to ${TIMEOUT_STR} total)..."
+		if "${FIRST}" ; then
+			flock -u 999 || fail "Failed to release the execution lock for SSL initialization"
+			waiting "Waiting for the ACME certificates to be initialized (up to ${TIMEOUT_STR} total)..."
+		fi
 		FIRST="false"
 
 		# Poke every 100ms (10 times per second)
