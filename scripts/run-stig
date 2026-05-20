@@ -1,0 +1,31 @@
+#!/bin/bash
+
+set -euo pipefail
+. /.functions
+
+run()
+{
+	running "Running: ${@}"
+	( set +euo pipefail ; exec "${@}" )
+	return ${?}
+}
+
+usage()
+{
+	echo -e "usage: ${BASH_ARGV0:-${BASH_SOURCE:-${0}}} dir"
+	exit 1
+}
+
+[ ${#} -eq 1 ] || usage
+
+STIG_DIR="${1}"
+require_dir_readable "${STIG_DIR}"
+STIG_DIR="$(readlink -f "${STIG_DIR}")"
+
+eyes "Running the STIG remediation scripts from [${STIG_DIR}]"
+cd "${STIG_DIR}" || fail "Failed to cd into [${STIG_DIR}] (rc=${?})"
+while read SCRIPT ; do
+	running "Applying [${SCRIPT}]..."
+	OUT="$(run "${SCRIPT}" 2>&1)" && ok "Remediation successful!" || fail "Remediation failed (rc=${?}):\n${OUT}"
+done < <(find . -type f -name "*.sh" -executable | sed -e 's;^[.]/;;g' | sort)
+ok "Remediations complete!"

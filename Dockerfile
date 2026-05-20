@@ -207,11 +207,7 @@ RUN chmod a+rX /usr/local/bin/*
 COPY --chown=root:root --chmod=0444 functions /.functions
 
 # STIG Remediations
-COPY --chown=root:root stig/ /usr/share/stig/
-RUN cd /usr/share/stig && ./run-all
-
-# Enable FIPS (can't do this yet ... need to wait for Ubuntu Pro!)
-# RUN fips-mode-setup --enable
+RUN --mount=type=bind,source=stig,target=/stig run-stig /stig
 
 ENV CURL_HOME="/etc/curl"
 COPY --chown=root:root --chmod=0644 curlrc "${CURL_HOME}/.curlrc"
