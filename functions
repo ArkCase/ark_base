@@ -1387,6 +1387,18 @@ __ssl()
 }
 
 #
+# usage: wait_ssl
+#
+# Wait until the SSL layer is initialized
+#
+wait_ssl()
+{
+	declare -gx ACME_WAIT="true"
+	init_ssl || return ${?}
+	return 0
+}
+
+#
 # usage: init_ssl
 #
 # Initialize the SSL layer

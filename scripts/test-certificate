@@ -9,7 +9,7 @@ require_file_readable "${SSL_DIR}/.env"
 #
 # Init all the SSL-related stuff
 #
-init_ssl
+wait_ssl
 
 require_file_readable "${SSL_CERTIFICATE}"
 require_file_readable "${SSL_PRIVATE_KEY}"
