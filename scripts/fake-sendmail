@@ -1,0 +1,22 @@
+#!/bin/bash
+
+set -euo pipefail
+. /.functions
+define_base_vars
+
+MARK="$(date -u "+%Y%m%d-%H%M%SZ")"
+LOG="/tmp/${__SCRIPT}-${MARK}.log"
+
+redirect_logs "${LOG}"
+
+eyes "Running as: $(id)"
+running "Parameters: [ ${0@Q} ${@@Q} ]"
+warn "Environment:\n$(env | sort)"
+say "================================================================================"
+eyes "BEGIN OUTPUT"
+say "================================================================================"
+cat
+say "================================================================================"
+ok "END OUTPUT"
+say "================================================================================"
+exit 0
