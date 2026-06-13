@@ -47,34 +47,7 @@ ARG STEP_VER="0.30.2"
 ARG STEP_VER_PFX="${BASE_VER_PFX}"
 ARG STEP_IMG="${STEP_REGISTRY}/${STEP_REPO}:${STEP_VER_PFX}${STEP_VER}"
 
-ARG GO="1.26"
-ARG BUILDER_IMAGE="golang"
-ARG BUILDER_VER="${GO}-alpine"
-ARG BUILDER_IMG="${BUILDER_IMAGE}:${BUILDER_VER}"
-
 FROM "${SCRIPTS_IMG}" AS scripts
-
-FROM "${BUILDER_IMG}" AS gucci
-
-ARG GO
-ARG GUCCI_REPO="https://github.com/noqcks/gucci.git"
-ARG GUCCI_VER="1.9.0"
-
-RUN apk --no-cache add git
-
-ENV SRCPATH="/build/gucci"
-ENV GO111MODULE="on"
-ENV CGO_ENABLED="0"
-ENV GOOS="linux"
-ENV GOARCH="amd64"
-RUN mkdir -p "${SRCPATH}" && \
-    cd "${SRCPATH}" && \
-    git clone "${GUCCI_REPO}" "." --branch="v${GUCCI_VER}" && \
-    go mod edit -go "${GO}" && \
-    go get -u && \
-    go mod tidy && \
-    go install -v -ldflags "-X main.AppVersion='${GUCCI_VER}' -w -extldflags static" && \
-    cp -vf /go/bin/gucci /gucci
 
 ARG STEP_IMG
 
@@ -188,9 +161,6 @@ RUN groupadd --gid "${DEF_GID}" "${DEF_GROUP}" && \
     mkdir -p "${HOME}/bin" "${APP_ROOT}/bin" && \
     chown -R "${DEF_USER}:${DEF_GROUP}" "${APP_ROOT}" "${HOME}" && \
     chmod -R u=rwX,g=rX,o=X "${APP_ROOT}" "${HOME}"
-
-# Install gucci
-COPY --chown=root:root --chmod=0755 --from=gucci "/gucci" "/usr/local/bin/gucci"
 
 # Install step
 COPY --chown=root:root --chmod=0755 --from=step "/step${FIPS}" "/usr/local/bin/step"
