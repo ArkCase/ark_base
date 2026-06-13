@@ -35,6 +35,12 @@ ARG BASE_VER="${VER}"
 ARG BASE_VER_PFX=""
 ARG BASE_IMG="${BASE_REGISTRY}/${BASE_REPO}${FIPS}:${BASE_VER_PFX}${BASE_VER}"
 
+ARG SCRIPTS_REGISTRY="${BASE_REGISTRY}"
+ARG SCRIPTS_REPO="arkcase/base-container-scripts"
+ARG SCRIPTS_VER="latest"
+ARG SCRIPTS_VER_PFX="${BASE_VER_PFX}"
+ARG SCRIPTS_IMG="${SCRIPTS_REGISTRY}/${SCRIPTS_REPO}:${SCRIPTS_VER_PFX}${SCRIPTS_VER}"
+
 ARG STEP_REGISTRY="${PRIVATE_REGISTRY}"
 ARG STEP_REPO="arkcase/rebuild-step-ca"
 ARG STEP_VER="0.30.2"
@@ -45,6 +51,8 @@ ARG GO="1.26"
 ARG BUILDER_IMAGE="golang"
 ARG BUILDER_VER="${GO}-alpine"
 ARG BUILDER_IMG="${BUILDER_IMAGE}:${BUILDER_VER}"
+
+FROM "${SCRIPTS_IMG}" AS scripts
 
 FROM "${BUILDER_IMG}" AS gucci
 
@@ -193,26 +201,22 @@ ENV ACM_GID="${ACM_GID}"
 RUN groupadd --gid "${ACM_GID}" "${ACM_GROUP}"
 
 # Add the acme-init stuff (only accessible by ACM_GROUP)
-COPY --chown=root:${ACM_GROUP} --chmod=0750 acme-init acme-validate expand-urls find-ssl-dirs /usr/local/bin/
+COPY --chown=root:${ACM_GROUP} --chmod=0750 acme-init acme-validate /usr/local/bin/
 COPY --chown=root:root --chmod=0640 00-acme-init /etc/sudoers.d
 RUN sed -i -e "s;\${ACM_GROUP};${ACM_GROUP};g" /etc/sudoers.d/00-acme-init
 
 # Copy extra files to the image, and fix permissions for sensitive directories
 COPY ./core/root/ /
 
-COPY --chown=root:root scripts/ /usr/local/bin
-RUN chmod a+rX /usr/local/bin/*
-
 # Add the common-use functions
-COPY --chown=root:root --chmod=0444 functions /.functions
+COPY --chown=root:root --chmod=0755 --from=scripts /usr/local/bin/ /usr/local/bin/
+COPY --chown=root:root --chmod=0444 --from=scripts /.functions /.functions
 
 # STIG Remediations
 RUN --mount=type=bind,source=stig,target=/stig run-stig /stig
 
 ENV CURL_HOME="/etc/curl"
 COPY --chown=root:root --chmod=0644 curlrc "${CURL_HOME}/.curlrc"
-
-COPY --chown=root:root --chmod=0755 apply-fixes /usr/local/bin/
 
 RUN mkdir -p "${BASE_DIR}" "${CONF_DIR}" "${DATA_DIR}" "${LOGS_DIR}" "${TEMP_DIR}" && \
     chmod -R ug=rwX,o= "${TEMP_DIR}"
