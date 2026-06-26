@@ -1,12 +1,6 @@
 name: ecr-build
 on:
   workflow_dispatch: {}
-  push:
-    branches:
-      - main
-      - main-fips
-      - develop
-      - develop-fips
 
 jobs:
   call-workflow-in-ecr-template:
