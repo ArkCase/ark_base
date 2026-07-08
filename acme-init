@@ -494,10 +494,15 @@ initialize()
 	export SSL_CERTIFICATE="${SSL_DIR}/cert.pem"
 	export SSL_PRIVATE_KEY="${SSL_DIR}/cert.key"
 	export SSL_PRIVATE_KEY_AES="${SSL_DIR}/cert.key.aes"
-	export SSL_ROOT="${SSL_DIR}/ca-root.pem"
-	export SSL_INT="${SSL_DIR}/ca-int.pem"
+	export SSL_CA_ROOT="${SSL_DIR}/ca-root.pem"
+	export SSL_CA_INT="${SSL_DIR}/ca-int.pem"
+	export SSL_CA_CHAIN="${SSL_DIR}/ca-chain.pem"
+	export SSL_ROOT="${SSL_CA_ROOT}"
+	export SSL_INT="${SSL_CA_INT}"
+	export SSL_CHAIN="${SSL_CA_CHAIN}"
 	export SSL_CERTIFICATE_HAPROXY="${SSL_DIR}/haproxy-cert.pem"
 	export SSL_CA_TRUSTS="${OS_SSL_CA_TRUSTS}"
+
 
 	SSL_ENV_FILE_VARS+=(
 		SSL_PASSWORD
@@ -508,9 +513,14 @@ initialize()
 		SSL_CERTIFICATE
 		SSL_CERTIFICATE_HAPROXY
 
-		SSL_INT
 		SSL_ROOT
+		SSL_INT
+		SSL_CHAIN
 		SSL_CA_TRUSTS
+
+		SSL_CA_ROOT
+		SSL_CA_INT
+		SSL_CA_CHAIN
 	)
 
 	initialize_java
@@ -683,8 +693,22 @@ generate_certificate()
 		|| warn "Failed to create the AES-256 (PKCS8) Encrypted certificate key (rc=${?}): ${OUT}"
 
 	say "📜 Rendering the certificate files for HAProxy..."
-	cat "${SSL_CERTIFICATE}" "${SSL_ROOT}" "${SSL_PRIVATE_KEY}" > "${SSL_CERTIFICATE_HAPROXY}"
+	OUT="$( (cat "${SSL_CERTIFICATE}" "${SSL_CA_ROOT}" "${SSL_PRIVATE_KEY}" > "${SSL_CERTIFICATE_HAPROXY}") 2>&1)" \
+		&& ok "HAProxy certificate ready!" \
+		|| fail "Failed to generate the HAProxy certificate"
 	SECURE_FILES+=( "${SSL_CERTIFICATE_HAPROXY}" )
+
+	local LIST=()
+	for C in "${SSL_CA_INT}" "${SSL_CA_ROOT}" ; do
+		is_file_readable "${C}" && LIST+=( "${C}" )
+	done
+
+	if [ ${#LIST[@]} -gt 0 ] ; then
+		say "📜 Rendering the CA chain certifiate..."
+		OUT="$( (cat "${LIST[@]}" > "${SSL_CA_CHAIN}") 2>&1)" \
+			&& ok "CA chain generated!" \
+			|| fail "Failed to generate the CA chain (rc=${?}): ${OUT}"
+	fi
 
 	ok "Certificate generation complete!"
 	return 0
