@@ -45,7 +45,7 @@ ARG STEP_REGISTRY="${PRIVATE_REGISTRY}"
 ARG STEP_REPO="arkcase/rebuild-step-ca"
 ARG STEP_VER="0.30.2"
 ARG STEP_VER_PFX="${BASE_VER_PFX}"
-ARG STEP_IMG="${STEP_REGISTRY}/${STEP_REPO}:${STEP_VER_PFX}${STEP_VER}"
+ARG STEP_IMG="${STEP_REGISTRY}/${STEP_REPO}${FIPS}:${STEP_VER_PFX}${STEP_VER}"
 
 FROM "${SCRIPTS_IMG}" AS scripts
 
@@ -163,7 +163,7 @@ RUN groupadd --gid "${DEF_GID}" "${DEF_GROUP}" && \
     chmod -R u=rwX,g=rX,o=X "${APP_ROOT}" "${HOME}"
 
 # Install step
-COPY --chown=root:root --chmod=0755 --from=step "/step${FIPS}" "/usr/local/bin/step"
+COPY --chown=root:root --chmod=0755 --from=step /step /usr/local/bin/
 
 # Define the ACM_GROUP
 ENV ACM_GROUP="${ACM_GROUP}"
