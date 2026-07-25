@@ -113,7 +113,6 @@ RUN mkdir -p "${HOME}/.pki/nssdb" && \
     userdel --remove ubuntu && \
     chown -R "${DEF_UID}:${DEF_GID}" "${HOME}/.pki" && \
     apt-get update && \
-    apt-get -y dist-upgrade -f && \
     apt-get -y install \
         acl \
         apt-transport-https \
