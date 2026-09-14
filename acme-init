@@ -303,7 +303,7 @@ download_trusts()
 	set_or_default K8S_CA "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 	if is_file_readable "${K8S_CA}" ; then
 		say "Deploying the local Kubernetes cluster's CA certificate ..."
-		install_chain "kubernetes-ca" "${OS_SSL_SUFFIX}" < "${K8S_CA}"
+		install_chain "${OS_SSL_ANCHORS}/kubernetes-ca" "${OS_SSL_SUFFIX}" < "${K8S_CA}"
 		(( ++COUNT ))
 	fi
 
