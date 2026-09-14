@@ -299,6 +299,14 @@ download_trusts()
 	SSL_TRUSTS_DIR="$(readlink -f "${SSL_TRUSTS_DIR}")"
 
 	COUNT=0
+
+	set_or_default K8S_CA "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+	if is_file_readable "${K8S_CA}" ; then
+		say "Deploying the local Kubernetes cluster's CA certificate ..."
+		install_chain "kubernetes-ca" "${OS_SSL_SUFFIX}" < "${K8S_CA}"
+		(( ++COUNT ))
+	fi
+
 	while read cert ; do
 		CERT="${cert##*/}"
 		if [ ! -f "${cert}" ] ; then
