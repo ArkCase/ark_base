@@ -119,10 +119,12 @@ RUN mkdir -p "${HOME}/.pki/nssdb" && \
         attr \
         bash-completion \
         bind9-utils \
+        bzip2 \
         curl \
         dnsutils \
         findutils \
         gettext-base \
+        gpg \
         inotify-tools \
         jq \
         libpam-modules \
@@ -132,6 +134,7 @@ RUN mkdir -p "${HOME}/.pki/nssdb" && \
         locales \
         lsb-release \
         openssl \
+        patch \
         python-is-python3 \
         python3 \
         python3-yaml \
