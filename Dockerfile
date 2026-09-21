@@ -134,7 +134,6 @@ RUN mkdir -p "${HOME}/.pki/nssdb" && \
         openssl \
         python-is-python3 \
         python3 \
-        python3-pip \
         python3-yaml \
         sudo \
         tar \
