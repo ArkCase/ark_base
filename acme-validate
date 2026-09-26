@@ -7,69 +7,20 @@ set_or_default SSL_DIR "/.ssl"
 
 require_exe openssl sha256sum
 
-doing "Validating the existing certificates and keys"
-require_dir_readable "${SSL_DIR}"
+wait_ssl
 
-PWFILE="${SSL_DIR}/keystore.pass"
-[ -v ACME_KEYSTORE_PASSWORD_FILE ] && PWFILE="${ACME_KEYSTORE_PASSWORD_FILE}"
+test-certificate "${@}" || exit ${?}
 
-[ -n "${PWFILE}" ] || fail "The password file specification cannot be empty"
-[ -s "${PWFILE}" ] || fail "The password file must be a non-empty file"
-
-# Check that all the files are there
-BASE_FILES=(
-	"${SSL_DIR}/ca-root.pem"
-	"${SSL_DIR}/ca-int.pem"
-	"${SSL_DIR}/cert.key.aes"
-	"${SSL_DIR}/cert.pem"
-	"${PWFILE}"
-)
-
-is_fips && FIPS="true" || FIPS="false"
-
-as_boolean "${FIPS}" || BASE_FILES+=( "${SSL_DIR}/cert.key.rsa" )
-
-for f in "${BASE_FILES[@]}" ; do
-	is_file_readable "${f}"
-	[ -s "${f}" ] || fail "The file [${f}] is of length 0"
-done
-
-# Decrypt the AES key
-AES="$(openssl pkcs8 -in "${SSL_DIR}/cert.key.aes" -v2 aes-256-cbc -passin file:"${PWFILE}")" || fail "Failed to decrypt the AES-encrypted (PKCS8) private key"
-read PRIVATE rest < <(echo -n "${AES}" | openssl rsa -modulus -noout | sha256sum)
-
-if ! as_boolean "${FIPS}" ; then
-	RSA="$(openssl rsa -in "${SSL_DIR}/cert.key.rsa" -passin file:"${PWFILE}" 2>/dev/null)" || fail "Failed to decrypt the RSA-encrypted private key"
-	read RSA_PRIVATE rest < <(echo -n "${RSA}" | openssl rsa -modulus -noout | sha256sum)
-
-	# Compare the moduli
-	[ "${PRIVATE}" == "${RSA_PRIVATE}" ] || fail "The RSA-encrypted key is not equal to the AES-encrypted key"
-fi
-
-# Check that the private and public keys match
-read PUBLIC rest < <(openssl x509 -modulus -noout -in "${SSL_DIR}/cert.pem" | sha256sum)
-[ "${PUBLIC}" == "${PRIVATE}" ] || fail "The modulus for the private and public keys did not match."
-
-# Is the int cert signed by the root pem?
-openssl verify -CAfile "${SSL_DIR}/ca-root.pem" "${SSL_DIR}/ca-int.pem" &>/dev/null || fail "The intermediate CA is not signed by the root CA"
-openssl verify -CAfile <(cat "${SSL_DIR}/ca-int.pem" "${SSL_DIR}/ca-root.pem") "${SSL_DIR}/cert.pem" &>/dev/null || fail "The certificate isn't signed by the intermediate CA"
-
-# Are the int and root certs deployed to the anchor directories?
-
+# Is the root certificate in the system trusts?
 SSL_DIRECTORIES="$(find-ssl-dirs)" || fail "Failed to compute the local SSL configuration"
 source <(echo -n "${SSL_DIRECTORIES}") || fail "Failed to apply the local SSL configuration"
 
-for n in ca-int ca-root ; do
-	MASTER="${SSL_DIR}/${n}.pem"
-	ANCHOR="${OS_SSL_ANCHORS}/${n}.${OSS_SSL_SUFFIX}"
-	[ -f "${MASTER}" ] || fail "The master certificate [${MASTER}] does not exist"
-	[ -f "${ANCHOR}" ] || fail "The anchor certificate [${ANCHOR}] does not exist"
+HASH="$(openssl x509 -noout -hash -in "${SSL_CA_ROOT}" 2>&1)" || fail "Failed to compute the hash for the root certificate [${SSL_CA_ROOT}] (rc=${?}): ${HASH}"
+HASH_FILE="/etc/ssl/certs/${HASH}.0"
+is_file_readable "${HASH_FILE}" || fail "The root certificate isn't in the system's trusts!"
 
-	read A REST < <(sha256sum "${MASTER}")
-	read B REST < <(sha256sum "${ANCHOR}")
+read SUM REST < <(sha256sum "${SSL_CA_ROOT}")
+echo "${SUM} ${HASH_FILE}" | sha256sum --check --status || fail "The root certificate [${SSL_CA_ROOT}] is not the same as the trusted certificate in the system's store at [${HASH_FILE}]"
 
-	[ "${A}" == "${B}" ] || fail "The SHA-256 sums for [${MASTER}] and [${ANCHOR}] don't match: [${A}] != [${B}]"
-done
-
-ok "Certificate validation at [${SSL_DIR}] complete!"
+ok "SSL validation complete!"
 exit 0

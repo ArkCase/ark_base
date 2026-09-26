@@ -225,7 +225,7 @@ await_if_necessary()
 	return 0
 }
 
-download_trusts()
+download_issuer_trusts()
 {
 	set_or_default ACME_URL "https://acme:9000"
 	# Validate the URL
@@ -288,7 +288,10 @@ download_trusts()
 	say "💾 Copying the root CA into the target directory..."
 	cp -f "${ACME_ROOT_CA_ANCHOR}" "${SSL_DIR}/ca-root.pem"
 	ok "Done!"
+}
 
+download_trusts()
+{
 	################################################################################
 	#
 	# Trust the certificates we're told to trust
@@ -384,37 +387,6 @@ certificate_is_valid()
 	return 0
 }
 
-generate_password()
-{
-	################################################################################
-	#
-	# Generate the key's password file
-	#
-	################################################################################
-	if [ -v ACME_KEYSTORE_PASSWORD_FILE ] ; then
-		[ -n "${ACME_KEYSTORE_PASSWORD_FILE}" ] || fail "The variable ACME_KEYSTORE_PASSWORD_FILE may not be empty"
-		[ -s "${ACME_KEYSTORE_PASSWORD_FILE}" ] || fail "The password file [${ACME_KEYSTORE_PASSWORD_FILE}] may not be empty"
-	else
-		# We weren't given a password file to use, so use the default value
-		ACME_KEYSTORE_PASSWORD_FILE="${SSL_DIR}/.password"
-
-		# Allow the use of ACME_KEYSTORE_PASSWORD to set the password. This isn't
-		# particularly secure, but it may be required in some instances where the
-		# pod needs to know the password beforehand (i.e. b/c Helm needs to know it)
-		if [ -v ACME_KEYSTORE_PASSWORD ] ; then
-			[ -n "${ACME_KEYSTORE_PASSWORD}" ] || fail "The variable ACME_KEYSTORE_PASSWORD may not be empty"
-			echo -n "${ACME_KEYSTORE_PASSWORD}" > "${ACME_KEYSTORE_PASSWORD_FILE}" || fail "Failed to render the password file at [${ACME_KEYSTORE_PASSWORD_FILE}] with the password given in ACME_KEYSTORE_PASSWORD"
-		else
-			# We weren't given a password, so just render a random one
-			render_password > "${ACME_KEYSTORE_PASSWORD_FILE}" || fail "Failed to render a new password into [${ACME_KEYSTORE_PASSWORD_FILE}]"
-		fi
-	fi
-
-	export ACME_KEYSTORE_PASSWORD="$(<"${ACME_KEYSTORE_PASSWORD_FILE}")"
-	SECURE_FILES+=( "${ACME_KEYSTORE_PASSWORD_FILE}" )
-	return 0
-}
-
 compute_certificate_san()
 {
 	################################################################################
@@ -423,7 +395,7 @@ compute_certificate_san()
 	#
 	################################################################################
 	FQDN="$(hostname -f)"
-	IFS="." read POD SERVICE NAMESPACE SVC CLUSTER_DOMAIN <<< "${FQDN}"
+	read POD SERVICE NAMESPACE SVC CLUSTER_DOMAIN <<< "${FQDN//./ }"
 
 	set_or_default SSL_EXTRA_SAN
 	set_as_boolean SSL_EXTRA_SAN_STRICT
@@ -494,48 +466,88 @@ compute_certificate_san()
 	return 0
 }
 
+initialize_password()
+{
+	################################################################################
+	#
+	# Generate the key's password file
+	#
+	################################################################################
+	if [ -v SSL_PASSWORD_FILE ] ; then
+		[ -n "${SSL_PASSWORD_FILE}" ] || fail "The variable SSL_PASSWORD_FILE may not be empty"
+		[ -s "${SSL_PASSWORD_FILE}" ] || fail "The password file [${SSL_PASSWORD_FILE}] may not be empty"
+	else
+		# We weren't given a password file to use, so use the default value
+		export SSL_PASSWORD_FILE="${SSL_DIR}/.password"
+
+		# Allow the use of SSL_PASSWORD to set the password. This isn't
+		# particularly secure, but it may be required in some instances where the
+		# pod needs to know the password beforehand (i.e. b/c Helm needs to know it)
+		if [ -v SSL_PASSWORD ] ; then
+			[ -n "${SSL_PASSWORD}" ] || fail "The variable SSL_PASSWORD may not be empty"
+			echo -n "${SSL_PASSWORD}" > "${SSL_PASSWORD_FILE}" || fail "Failed to render the password file at [${SSL_PASSWORD_FILE}] with the password given in SSL_PASSWORD"
+		else
+			# We weren't given a password, so just render a random one
+			render_password > "${SSL_PASSWORD_FILE}" || fail "Failed to render a new password into [${SSL_PASSWORD_FILE}]"
+		fi
+	fi
+
+	export SSL_PASSWORD="$(<"${SSL_PASSWORD_FILE}")"
+	SECURE_FILES+=( "${SSL_PASSWORD_FILE}" )
+	return 0
+}
+
 initialize()
 {
-	export SSL_PASSWORD_FILE="${ACME_KEYSTORE_PASSWORD_FILE}"
-	export SSL_PASSWORD="$(<"${SSL_PASSWORD_FILE}")"
+    set_or_default SSL_CERTIFICATE "${SSL_DIR}/cert.pem"
+    set_or_default SSL_PRIVATE_KEY "${SSL_DIR}/key.pem"
+    set_or_default SSL_PRIVATE_KEY_ENCRYPTED "${SSL_DIR}/key.aes.pem"
+    set_or_default SSL_CA_ROOT "${SSL_DIR}/ca-root.pem"
+    set_or_default SSL_CA_INT "${SSL_DIR}/ca-int.pem"
+    set_or_default SSL_CA_CHAIN "${SSL_DIR}/ca-chain.pem"
 
-	export SSL_CERTIFICATE="${SSL_DIR}/cert.pem"
-	export SSL_PRIVATE_KEY="${SSL_DIR}/cert.key"
-	export SSL_PRIVATE_KEY_AES="${SSL_DIR}/cert.key.aes"
-	export SSL_CA_ROOT="${SSL_DIR}/ca-root.pem"
-	export SSL_CA_INT="${SSL_DIR}/ca-int.pem"
-	export SSL_CA_CHAIN="${SSL_DIR}/ca-chain.pem"
-	export SSL_ROOT="${SSL_CA_ROOT}"
-	export SSL_INT="${SSL_CA_INT}"
-	export SSL_CHAIN="${SSL_CA_CHAIN}"
+	# Export, just in case ...
+	export SSL_PASSWORD_FILE SSL_CERTIFICATE SSL_PRIVATE_KEY SSL_PRIVATE_KEY_ENCRYPTED SSL_CA_ROOT SSL_CA_INT SSL_CA_CHAIN
+
 	export SSL_CERTIFICATE_HAPROXY="${SSL_DIR}/haproxy-cert.pem"
 	export SSL_CA_TRUSTS="${OS_SSL_CA_TRUSTS}"
 
+	initialize_password
 
 	SSL_ENV_FILE_VARS+=(
 		SSL_PASSWORD
 		SSL_PASSWORD_FILE
 
 		SSL_PRIVATE_KEY
-		SSL_PRIVATE_KEY_AES
+		SSL_PRIVATE_KEY_ENCRYPTED
 		SSL_CERTIFICATE
 		SSL_CERTIFICATE_HAPROXY
-
-		SSL_ROOT
-		SSL_INT
-		SSL_CHAIN
-		SSL_CA_TRUSTS
 
 		SSL_CA_ROOT
 		SSL_CA_INT
 		SSL_CA_CHAIN
+		SSL_CA_TRUSTS
 	)
 
-	initialize_java
-}
+    ################################################################################
+    #
+    # These are deprecated. Remove when it's safe to do so
+    #
+    export SSL_ROOT="${SSL_CA_ROOT}"
+    export SSL_INT="${SSL_CA_INT}"
+    export SSL_CHAIN="${SSL_CA_CHAIN}"
+    export SSL_PRIVATE_KEY_AES="${SSL_PRIVATE_KEY_ENCRYPTED}"
 
-initialize_java()
-{
+    SSL_ENV_FILE_VARS+=(
+        SSL_ROOT
+        SSL_INT
+        SSL_CHAIN
+        SSL_PRIVATE_KEY_AES
+    )
+    #
+    #
+    ################################################################################
+
 	################################################################################
 	#
 	# If we're doing the Java thing, then set up all the Java stuff
@@ -574,8 +586,8 @@ initialize_java()
 	#
 	export JAVA_KEYSTORE_TYPE="${JAVA_SSL_KEYSTORE_TYPE}"
 	export JAVA_KEYSTORE="${SSL_DIR}/keystore.${JAVA_KEYSTORE_TYPE,,}"
-	export JAVA_KEYSTORE_PASSWORD="${ACME_KEYSTORE_PASSWORD}"
-	export JAVA_KEYSTORE_PASSWORD_FILE="${ACME_KEYSTORE_PASSWORD_FILE}"
+	export JAVA_KEYSTORE_PASSWORD="${SSL_PASSWORD}"
+	export JAVA_KEYSTORE_PASSWORD_FILE="${SSL_PASSWORD_FILE}"
 	export JAVA_KEYSTORE_PROVIDER="${JAVA_SSL_KEYSTORE_PROVIDER}"
 	export JAVA_KEYSTORE_PROVIDER_CLASS="${JAVA_SSL_KEYSTORE_PROVIDER_CLASS}"
 	export JAVA_KEYSTORE_PROVIDER_PATH="${JAVA_SSL_KEYSTORE_PROVIDER_PATH}"
@@ -667,38 +679,122 @@ install_intermediates()
 	local SRC="${1}"
 	if [ $(grep -c -- "-----END CERTIFICATE-----" "${SRC}") -gt 1 ] ; then
 		say "📂 Extracting the intermediate certificates from the signed bundle..."
-		sed -e '0,/-----END CERTIFICATE-----/d' < "${SRC}" > "${SSL_INT}" || fail "Failed to extract the intermediate CAs from the signed bundle (rc=${?})"
+		sed -e '0,/-----END CERTIFICATE-----/d' < "${SRC}" > "${SSL_CA_INT}" || fail "Failed to extract the intermediate CAs from the signed bundle (rc=${?})"
 		ok "Intermediates ready!"
-		install_chain "${OS_SSL_ANCHORS}/ca-int" "${OS_SSL_SUFFIX}" < "${SSL_INT}"
+		install_chain "${OS_SSL_ANCHORS}/ca-int" "${OS_SSL_SUFFIX}" < "${SSL_CA_INT}"
 	fi
+	return 0
+}
+
+generate_asn1()
+{
+	set_or_default SSL_PBKDF2_ITERATIONS 10000
+
+	local SALT=""
+	local REST=""
+	read SALT REST < <(sha256sum "${SSL_CERTIFICATE}")
+	SALT="${SALT^^}"
+
+	local IV="${SALT:32:32}"
+	local SALT="${SALT:0:32}"
+
+	local KEY=""
+	KEY="$(openssl kdf -keylen 32 -kdfopt digest:SHA256 -kdfopt pass:"${SSL_PASSWORD}" -kdfopt hexsalt:"${SALT}" -kdfopt iter:"${SSL_PBKDF2_ITERATIONS}" PBKDF2)" || { RC=${?} ; echo "Failed to compute the encryption key for the SSL private key" 1>&2 ; return ${RC} ; }
+	KEY="${KEY//:/}"
+
+	local ENCRYPTED=""
+	ENCRYPTED="$(openssl rsa -in "${SSL_PRIVATE_KEY}" -outform DER | openssl enc -nosalt -a -aes-256-cbc -K "${KEY}" -iv "${IV}")" || { RC=${?} ; echo "Failed to encrypt the SSL private key" 1>&2 ; return ${RC} ; }
+
+	local HEX=""
+	HEX="$(echo -n "${ENCRYPTED}" | base64 -d | od -An -v -t x1 | tr '[:lower:]' '[:upper:]' | tr -d '\n[:space:]')"
+
+	cat <<-EOF
+	asn1 = SEQUENCE:encrypted_private_key_info
+
+	[encrypted_private_key_info]
+	encryptionAlgorithm = SEQUENCE:pbes2_algo
+	encryptedData = FORMAT:HEX,OCTETSTRING:${HEX}
+
+	[pbes2_algo]
+	id = OID:1.2.840.113549.1.5.13
+	# id = OID:pbes2
+	parameters = SEQUENCE:pbes2_params
+
+	[pbes2_params]
+	keyDerivationFunc = SEQUENCE:pbkdf2_algo
+	encryptionScheme = SEQUENCE:aes256_cbc_algo
+
+	[pbkdf2_algo]
+	id = OID:1.2.840.113549.1.5.12
+	# id = OID:pkcs5PBKDF2
+	parameters = SEQUENCE:pbkdf2_params
+
+	[pbkdf2_params]
+	salt = FORMAT:HEX,OCTETSTRING:${SALT}
+	iterationCount = INT:${SSL_PBKDF2_ITERATIONS}
+	prf = SEQUENCE:prf_algo
+
+	[prf_algo]
+	id = OID:1.2.840.113549.2.9
+	# id = OID:hmacWithSHA256
+	parameters = NULL
+
+	[aes256_cbc_algo]
+	id = OID:2.16.840.1.101.3.4.1.42
+	# id = OID:aes-256-cbc
+	iv = FORMAT:HEX,OCTETSTRING:${IV}
+	EOF
+}
+
+render_encrypted_key()
+{
+	#
+	# The OpenSSL version in Ubuntu 24.04 FIPS is buggy and has a hardcoded salt size
+	# of 8 bytes. For FIPS we need 16, so we have to jump through some extra hoops to
+	# generate a properly encrypted private key file.
+	#
+	say "🔒 Creating a PKCS#8 encrypted version of the key (AES-256-CBC)..."
+
+	local ASN1=""
+	ASN1="$(generate_asn1)" || fail "Failed to generate the ASN1 configuration (rc=${?})"
+
+	local BASE64=""
+	BASE64="$(openssl asn1parse -noout -genconf <(echo -n "${ASN1}") -out >(base64 -w 64))" || fail "Failed to generate the ASN1 DER payload (rc=${?})"
+
+	cat <<-EOF > "${SSL_PRIVATE_KEY_ENCRYPTED}" || fail "Failed to write the encrypted key out to [${SSL_PRIVATE_KEY_ENCRYPTED}] (rc=${?})"
+	-----BEGIN ENCRYPTED PRIVATE KEY-----
+	${BASE64}
+	-----END ENCRYPTED PRIVATE KEY-----
+	EOF
+	ok "AES-256 (PKCS8) Encrypted key ready!"
 	return 0
 }
 
 generate_certificate()
 {
-	################################################################################
 	#
-	# Render the certificate (different if Java is used vs. not)
+	# If we weren't given a certificate, then we must create our own
 	#
-	################################################################################
+	set_or_default ACME_PASSWORD_FILE "/.acme.password"
+	if ! is_file_readable "${ACME_PASSWORD_FILE}" ; then
+		err "Couldn't find the provisioner password file at [${ACME_PASSWORD_FILE}], will not generate any new certificates or keystores"
+		return 0
+	fi
+
+	# Always do these things for new certifiates!
+	compute_certificate_san
+	ensure_dir "${SSL_DIR}"
+	download_issuer_trusts
+
 	local CMD="generate_java"
 	as_boolean "${KEYTOOL}" || CMD="generate_pem"
 	"${CMD}" || fail "Failed to generate the certificate"
 
 	install_intermediates "${SSL_CERTIFICATE}" || return ${?}
 
-	say "🔒 Creating a AES (PKCS8) encrypted version of the key..."
-	CMD=(
-		openssl pkcs8 -topk8
-			-nocrypt
-			-in "${SSL_PRIVATE_KEY}"
-			-out "${SSL_PRIVATE_KEY_AES}"
-			-v2 aes-256-cbc
-			-passout env:SSL_PASSWORD
-	)
-	OUT="$("${CMD[@]}" 2>&1)" \
-		&& ok "AES-256 (PKCS8) Encrypted key ready!" \
-		|| warn "Failed to create the AES-256 (PKCS8) Encrypted certificate key (rc=${?}): ${OUT}"
+	render_encrypted_key
+
+	local OUT=""
 
 	say "📜 Rendering the certificate files for HAProxy..."
 	OUT="$( (cat "${SSL_CERTIFICATE}" "${SSL_CA_ROOT}" "${SSL_PRIVATE_KEY}" > "${SSL_CERTIFICATE_HAPROXY}") 2>&1)" \
@@ -726,6 +822,10 @@ generate_java()
 {
 	as_boolean "${KEYTOOL}" || return 0
 	say "🔐 Rendering a ${JAVA_KEYSTORE_TYPE} Keystore with the new certificate & key..."
+
+	# By now we have a private key in plaintext, and a certificate. At this point
+	# we can turn those two into a PKCS#12 keystore that includes the private key and
+	# the certificate, and import it into our keystore.
 
 	export JAVA_KEY_ALIAS="acme"
 	export JAVA_KEY_PASSWORD="${JAVA_KEYSTORE_PASSWORD}"
@@ -800,7 +900,7 @@ generate_java()
 		--force
 		--not-before="-1h30m"
 		--provisioner-password-file "${ACME_PASSWORD_FILE}"
-		--password-file="${ACME_KEYSTORE_PASSWORD_FILE}"
+		--password-file="${SSL_PASSWORD_FILE}"
 	)
 	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to get the certificate signature (rc=${?}): ${OUT}"
 
@@ -1138,23 +1238,8 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 	# This helps us do cleanup on exit
 	GARBAGE=()
 
-	generate_password
 	initialize
-
-	################################################################################
-	#
-	# Generate our new certificates
-	#
-	################################################################################
-	set_or_default ACME_PASSWORD_FILE "/.acme.password"
-	if [ -f "${ACME_PASSWORD_FILE}" ] ; then
-		compute_certificate_san
-		ensure_dir "${SSL_DIR}"
-		generate_certificate
-	else
-		err "Couldn't find the provisioner password file at [${ACME_PASSWORD_FILE}], will not generate any new certificates or keystores"
-	fi
-
+	generate_certificate
 	update_trusts
 	finalize_java_variables
 	secure_permissions
