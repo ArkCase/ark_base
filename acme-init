@@ -499,6 +499,8 @@ initialize_password()
 
 initialize()
 {
+	ensure_dir "${SSL_DIR}"
+
     set_or_default SSL_CERTIFICATE "${SSL_DIR}/cert.pem"
     set_or_default SSL_PRIVATE_KEY "${SSL_DIR}/key.pem"
     set_or_default SSL_PRIVATE_KEY_ENCRYPTED "${SSL_DIR}/key.aes.pem"
@@ -772,6 +774,7 @@ render_encrypted_key()
 
 generate_certificate()
 {
+
 	#
 	# If we weren't given a certificate, then we must create our own
 	#
@@ -783,8 +786,6 @@ generate_certificate()
 
 	# Always do these things for new certifiates!
 	compute_certificate_san
-	ensure_dir "${SSL_DIR}"
-	download_issuer_trusts
 
 	local CMD="generate_java"
 	as_boolean "${KEYTOOL}" || CMD="generate_pem"
@@ -1228,7 +1229,6 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 	#
 	################################################################################
 	await_if_necessary
-	download_trusts
 
 	# This array will contain the list of (absolute) paths for all
 	# files whose ownership and permissions will be set to the most
@@ -1239,6 +1239,8 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 	GARBAGE=()
 
 	initialize
+	download_trusts
+	download_issuer_trusts
 	generate_certificate
 	update_trusts
 	finalize_java_variables
