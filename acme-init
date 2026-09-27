@@ -825,7 +825,7 @@ generate_java()
 	say "🔐 Rendering a ${JAVA_KEYSTORE_TYPE} Keystore with the new certificate & key..."
 
 	# By now we have a private key in plaintext, and a certificate. At this point
-	# we can turn those two into a PKCS#12 keystore that includes the private key and
+	# we can turn those two into a keystore that includes the private key and
 	# the certificate, and import it into our keystore.
 
 	export JAVA_KEY_ALIAS="acme"
