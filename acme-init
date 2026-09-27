@@ -501,12 +501,12 @@ initialize()
 {
 	ensure_dir "${SSL_DIR}"
 
-    set_or_default SSL_CERTIFICATE "${SSL_DIR}/cert.pem"
-    set_or_default SSL_PRIVATE_KEY "${SSL_DIR}/key.pem"
-    set_or_default SSL_PRIVATE_KEY_ENCRYPTED "${SSL_DIR}/key.aes.pem"
-    set_or_default SSL_CA_ROOT "${SSL_DIR}/ca-root.pem"
-    set_or_default SSL_CA_INT "${SSL_DIR}/ca-int.pem"
-    set_or_default SSL_CA_CHAIN "${SSL_DIR}/ca-chain.pem"
+	set_or_default SSL_CERTIFICATE "${SSL_DIR}/cert.pem"
+	set_or_default SSL_PRIVATE_KEY "${SSL_DIR}/key.pem"
+	set_or_default SSL_PRIVATE_KEY_ENCRYPTED "${SSL_DIR}/key.aes.pem"
+	set_or_default SSL_CA_ROOT "${SSL_DIR}/ca-root.pem"
+	set_or_default SSL_CA_INT "${SSL_DIR}/ca-int.pem"
+	set_or_default SSL_CA_CHAIN "${SSL_DIR}/ca-chain.pem"
 
 	# Export, just in case ...
 	export SSL_PASSWORD_FILE SSL_CERTIFICATE SSL_PRIVATE_KEY SSL_PRIVATE_KEY_ENCRYPTED SSL_CA_ROOT SSL_CA_INT SSL_CA_CHAIN
@@ -531,24 +531,25 @@ initialize()
 		SSL_CA_TRUSTS
 	)
 
-    ################################################################################
-    #
-    # These are deprecated. Remove when it's safe to do so
-    #
-    export SSL_ROOT="${SSL_CA_ROOT}"
-    export SSL_INT="${SSL_CA_INT}"
-    export SSL_CHAIN="${SSL_CA_CHAIN}"
-    export SSL_PRIVATE_KEY_AES="${SSL_PRIVATE_KEY_ENCRYPTED}"
-
-    SSL_ENV_FILE_VARS+=(
-        SSL_ROOT
-        SSL_INT
-        SSL_CHAIN
-        SSL_PRIVATE_KEY_AES
-    )
-    #
-    #
-    ################################################################################
+	################################################################################
+	#
+	# These are deprecated. Remove when it's safe to do so
+	#
+	# UPDATE: 20260927 - should be safe to remove these already for the currently
+	#		 built containers. Leave it for next weekend's build.
+	# export SSL_ROOT="${SSL_CA_ROOT}"
+	# export SSL_INT="${SSL_CA_INT}"
+	# export SSL_CHAIN="${SSL_CA_CHAIN}"
+	# export SSL_PRIVATE_KEY_AES="${SSL_PRIVATE_KEY_ENCRYPTED}"
+	#
+	# SSL_ENV_FILE_VARS+=(
+	#	SSL_ROOT
+	#	SSL_INT
+	#	SSL_CHAIN
+	#	SSL_PRIVATE_KEY_AES
+	# )
+	#
+	################################################################################
 
 	################################################################################
 	#
@@ -943,7 +944,7 @@ generate_java()
 	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to import the signed certificate into the keystore (rc=${?}): ${OUT}"
 	ok "The keystore is ready!"
 
-	# Export the private key as PKCS12 so it can be dumped
+	# Export the private key as PKCS#12 so it can be dumped
 	# to PEM format using OpenSSL commands, which in turn
 	# makes it readable by processes using OpenSSL
 	say "🔑 Extracting the private key into a PEM-encoded file"
