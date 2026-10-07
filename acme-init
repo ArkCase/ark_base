@@ -395,11 +395,16 @@ compute_certificate_san()
 	#
 	################################################################################
 	FQDN="$(hostname -f)"
-	read POD SERVICE NAMESPACE SVC CLUSTER_DOMAIN <<< "${FQDN//./ }"
+	read POD SERVICE NAMESPACE SVC REST <<< "${FQDN//./ }"
 
 	set_or_default SSL_EXTRA_SAN
 	set_as_boolean SSL_EXTRA_SAN_STRICT
 	set_or_default SSL_SERVICE_EXTRA_NAMES
+
+	# Make sure the cluster domain is formatted correctly, removing any leading
+	# or trailing spaces, and multiple consecutive spaces get collapsed into a
+	# single dot, yielding a valid domain name
+	CLUSTER_DOMAIN="$(echo -n "${REST}" | sed -e 's;^\s*;;g' -e 's;\s*$;;g' -e 's;\s\+;.;g')"
 
 	VARIATIONS=( "${NAMESPACE}" "${SVC}" "${CLUSTER_DOMAIN}" )
 
