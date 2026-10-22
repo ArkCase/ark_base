@@ -484,6 +484,14 @@ compute_certificate_san()
 	return 0
 }
 
+can_read_as_key_owner()
+{
+	local FILE="${1}"
+	[ "${KEY_OWNER}" == "root" ] && return 0
+	runuser -u "${KEY_OWNER}" -- test -r "${FILE}" &>/dev/null || return 1
+	return 0
+}
+
 initialize_password()
 {
 	################################################################################
@@ -491,9 +499,14 @@ initialize_password()
 	# Generate the key's password file
 	#
 	################################################################################
+	SSL_PASSWORD_FILE_PROVIDED="false"
 	if [ -v SSL_PASSWORD_FILE ] ; then
 		[ -n "${SSL_PASSWORD_FILE}" ] || fail "The variable SSL_PASSWORD_FILE may not be empty"
 		[ -s "${SSL_PASSWORD_FILE}" ] || fail "The password file [${SSL_PASSWORD_FILE}] may not be empty"
+
+		# Its location is published for the key owner to use, so they must be able to read it
+		can_read_as_key_owner "${SSL_PASSWORD_FILE}" || fail "The password file [${SSL_PASSWORD_FILE}] must be readable by ${KEY_OWNER}"
+		SSL_PASSWORD_FILE_PROVIDED="true"
 	else
 		# We weren't given a password file to use, so use the default value
 		export SSL_PASSWORD_FILE="${SSL_DIR}/.password"
@@ -1104,16 +1117,27 @@ is_read_only_mount()
 	return 0
 }
 
+secure_provided_password_file()
+{
+	# A password file we were given is only ours to modify if it's on a writable
+	# filesystem (i.e. not a mounted Kubernetes secret), and already belongs to
+	# the key owner. Otherwise, we could be handing someone else's file over
+	local FILE="$(readlink -f "${SSL_PASSWORD_FILE}")"
+	if is_read_only_mount "${FILE}" ; then
+		say "The password file [${SSL_PASSWORD_FILE}] is on a read-only filesystem, its permissions will be left as-is"
+	elif [ "$(stat -c '%u' "${FILE}")" != "$(id -u "${KEY_OWNER}")" ] ; then
+		say "The password file [${SSL_PASSWORD_FILE}] isn't owned by ${KEY_OWNER}, its permissions will be left as-is"
+	else
+		chmod u=rX,go= "${FILE}" || warn "Failed to restrict the permissions for the password file [${SSL_PASSWORD_FILE}]"
+	fi
+	return 0
+}
+
 relax_permissions()
 {
-	# The password file may have been given to us on a read-only filesystem (i.e. a
-	# mounted Kubernetes secret), in which case its ownership and permissions can't
-	# (and needn't) be changed
+	# A password file we were given is never subject to the blanket treatment
 	local SKIP=()
-	if is_read_only_mount "${SSL_PASSWORD_FILE}" ; then
-		say "The password file [${SSL_PASSWORD_FILE}] is on a read-only filesystem, its permissions will be left as-is"
-		SKIP=( ! -samefile "$(readlink -f "${SSL_PASSWORD_FILE}")" )
-	fi
+	as_boolean "${SSL_PASSWORD_FILE_PROVIDED}" && SKIP=( ! -samefile "$(readlink -f "${SSL_PASSWORD_FILE}")" )
 
 	# Thanks to the umask, everything we've created is only accessible by root. By
 	# default, the files are handed over to the user who will be consuming them, and
@@ -1125,10 +1149,8 @@ relax_permissions()
 	find "${SSL_DIR}" "${SKIP[@]}" -type f -exec chmod u=rX,go= {} +
 	find "${SSL_DIR}" -type d -exec chown "root:${ACM_GROUP}" {} + -exec chmod a=rX {} +
 
-	# The password file may have been given to us, and live elsewhere
-	if [ ${#SKIP[@]} -eq 0 ] ; then
-		chown "${KEY_OWNER}:${ACM_GROUP}" "${SSL_PASSWORD_FILE}"
-		chmod u=rX,go= "${SSL_PASSWORD_FILE}"
+	if as_boolean "${SSL_PASSWORD_FILE_PROVIDED}" ; then
+		secure_provided_password_file
 	fi
 
 	# The files that are public, or are encrypted one way or another, are
