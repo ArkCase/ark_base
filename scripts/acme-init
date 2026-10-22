@@ -1,18 +1,23 @@
 #!/bin/bash
-[ $(id -u) -eq 0 ] || exec sudo --non-interactive --preserve-env "PATH=${PATH}" "${0}" "${@}"
+[ $(id -u) -eq 0 ] || exec sudo --non-interactive "${0}" "${@}"
 
 set -euo pipefail
-
-# Everything we create is only accessible by root, until relax_permissions
-# hands it over to its consumers. This way there's never a window during
-# which any sensitive files may be read by anyone else
-umask 0077
 
 . /.functions
 export LOCK="$(readlink -f "${0}")"
 
 SSL_DIRECTORIES="$(find-ssl-dirs)" || fail "Failed to compute the local SSL configuration"
 source <(echo -n "${SSL_DIRECTORIES}") || fail "Failed to apply the local SSL configuration"
+
+# Everything we create is only accessible by root, until relax_permissions
+# hands it over to its consumers. This way there's never a window during
+# which any sensitive files may be read by anyone else
+umask 0077
+
+#
+# Make sure we set our global cURL flags
+#
+export CURL_HOME="/etc/curl"
 
 #
 # Set some defaults

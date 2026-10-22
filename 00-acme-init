@@ -1,1 +1,72 @@
-%${ACM_GROUP}	ALL=(ALL:ALL) NOPASSWD:SETENV: /usr/local/bin/acme-init
+#
+# Members of ${ACM_GROUP} may run acme-init as root. The caller's environment
+# is reset (sudo's default behavior), the PATH is fixed, and only the variables
+# that acme-init consumes are passed through. All of these settings apply only
+# to running acme-init through this rule, and to nothing else.
+#
+Cmnd_Alias ACME_INIT = /usr/local/bin/acme-init
+
+Defaults!ACME_INIT secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# Where things live
+Defaults!ACME_INIT env_keep += "BASE_DIR"
+Defaults!ACME_INIT env_keep += "FIPS_DIR"
+Defaults!ACME_INIT env_keep += "K8S_CA"
+Defaults!ACME_INIT env_keep += "SSL_DIR"
+Defaults!ACME_INIT env_keep += "SSL_ENV_FILE"
+Defaults!ACME_INIT env_keep += "SSL_TRUSTS_DIR"
+
+# The certificate, its key, and the key's password
+Defaults!ACME_INIT env_keep += "SSL_CA_CHAIN"
+Defaults!ACME_INIT env_keep += "SSL_CA_INT"
+Defaults!ACME_INIT env_keep += "SSL_CA_ROOT"
+Defaults!ACME_INIT env_keep += "SSL_CERTIFICATE"
+Defaults!ACME_INIT env_keep += "SSL_DH_APPEND"
+Defaults!ACME_INIT env_keep += "SSL_PASSWORD"
+Defaults!ACME_INIT env_keep += "SSL_PASSWORD_FILE"
+Defaults!ACME_INIT env_keep += "SSL_PBKDF2_ITERATIONS"
+Defaults!ACME_INIT env_keep += "SSL_PRIVATE_KEY"
+Defaults!ACME_INIT env_keep += "SSL_PRIVATE_KEY_ENCRYPTED"
+
+# The certificate's names (the *_SERVICE_HOST values are validated as IPv4 addresses)
+Defaults!ACME_INIT env_keep += "*_SERVICE_HOST"
+Defaults!ACME_INIT env_keep += "LOCAL_DEV_HOSTNAME"
+Defaults!ACME_INIT env_keep += "POD_IP"
+Defaults!ACME_INIT env_keep += "SSL_EXTRA_SAN"
+Defaults!ACME_INIT env_keep += "SSL_EXTRA_SAN_STRICT"
+Defaults!ACME_INIT env_keep += "SSL_SERVICE_EXTRA_NAMES"
+
+# The ACME CA
+Defaults!ACME_INIT env_keep += "ACME_PASSWORD_FILE"
+Defaults!ACME_INIT env_keep += "ACME_SERVICE_NAME"
+Defaults!ACME_INIT env_keep += "ACME_URL"
+Defaults!ACME_INIT env_keep += "ACME_WAIT"
+Defaults!ACME_INIT env_keep += "ACME_WAIT_TIMEOUT"
+
+# Java
+Defaults!ACME_INIT env_keep += "JAVA_GLOBAL_TRUSTSTORE"
+Defaults!ACME_INIT env_keep += "JAVA_GLOBAL_TRUSTSTORE_PASSWORD"
+Defaults!ACME_INIT env_keep += "JAVA_GLOBAL_TRUSTSTORE_PROVIDER"
+Defaults!ACME_INIT env_keep += "JAVA_GLOBAL_TRUSTSTORE_PROVIDER_CLASS"
+Defaults!ACME_INIT env_keep += "JAVA_GLOBAL_TRUSTSTORE_TYPE"
+Defaults!ACME_INIT env_keep += "JAVA_SSL_KEYSTORE_PROVIDER"
+Defaults!ACME_INIT env_keep += "JAVA_SSL_KEYSTORE_PROVIDER_ARGS"
+Defaults!ACME_INIT env_keep += "JAVA_SSL_KEYSTORE_PROVIDER_CLASS"
+Defaults!ACME_INIT env_keep += "JAVA_SSL_KEYSTORE_PROVIDER_PATH"
+Defaults!ACME_INIT env_keep += "JAVA_SSL_KEYSTORE_TYPE"
+
+# Everything else
+Defaults!ACME_INIT env_keep += "ACM_GROUP"
+Defaults!ACME_INIT env_keep += "DEFAULT_GOLANG_FIPS_MODE"
+Defaults!ACME_INIT env_keep += "GODEBUG"
+Defaults!ACME_INIT env_keep += "GOLANG_FIPS_MODE"
+
+# Only if the trusts must be downloaded through a proxy
+# Defaults!ACME_INIT env_keep += "HTTPS_PROXY"
+# Defaults!ACME_INIT env_keep += "HTTP_PROXY"
+# Defaults!ACME_INIT env_keep += "NO_PROXY"
+# Defaults!ACME_INIT env_keep += "http_proxy"
+# Defaults!ACME_INIT env_keep += "https_proxy"
+# Defaults!ACME_INIT env_keep += "no_proxy"
+
+%${ACM_GROUP}	ALL=(root) NOPASSWD: ACME_INIT
