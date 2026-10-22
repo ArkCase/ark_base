@@ -439,7 +439,7 @@ compute_certificate_san()
 	# and be separated by commas, spaces, or colons
 	while read EXTRA_NAME ; do
 		[[ "${EXTRA_NAME}" =~ [.] ]] && fail "Invalid value in SSL_SERVICE_EXTRA_NAMES: [${EXTRA_NAME}] - may not contain dots"
-		is_valid_hostname_part "${EXTRA_NAME}" || continue
+		is_valid_hostname_part "${EXTRA_NAME}" || fail "Invalid value in SSL_SERVICE_EXTRA_NAMES: [${EXTRA_NAME}] is not a valid RFC-1123 hostname part"
 		SAN+=( $(list_hostname_variations "${EXTRA_NAME}" "${VARIATIONS[@]}") )
 	done < <(split_hostnames "${SSL_SERVICE_EXTRA_NAMES}")
 
