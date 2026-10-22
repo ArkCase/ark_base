@@ -82,6 +82,19 @@ marker_exists()
 	return 0
 }
 
+stop_watching()
+{
+	if [ -n "${WATCHER:-}" ] ; then
+		# Reap it as well, so it doesn't linger as a zombie
+		kill "${WATCHER}" &>/dev/null || true
+		wait "${WATCHER}" &>/dev/null || true
+	fi
+	[ -n "${WATCH_FD:-}" ] && exec {WATCH_FD}<&-
+	WATCHER=""
+	WATCH_FD=""
+	return 0
+}
+
 wait_for_marker()
 {
 	local MARKER="${1}"
@@ -89,23 +102,54 @@ wait_for_marker()
 	TIMEOUT="$(timestr_to_secs "${2}")" || fail "Invalid timeout specification [${2}]"
 
 	local TIMEOUT_STR="$(secs_to_timestr "${TIMEOUT}")"
+	local DIR="$(dirname "${MARKER}")"
 
-	local FIRST="true"
 	local START="$(date +%s)"
+	local NOW=""
+	local LEFT=""
+	local LINE=""
+	local RC=""
+	WATCHER=""
+	WATCH_FD=""
+
+	if ! marker_exists "${MARKER}" ; then
+		flock -u 999 || fail "Failed to release the execution lock for SSL initialization"
+		waiting "Waiting for the ACME certificates to be initialized (up to ${TIMEOUT_STR} total)..."
+
+		# Watch the directory for as long as we wait, so no changes are missed. The marker
+		# may be moved into place, or created and written in place (it's created empty, so
+		# the write is what we're really after). Other changes just wake us up early.
+		exec {WATCH_FD}< <(exec inotifywait -m -e moved_to -e create -e close_write --format '%f' "${DIR}" 2>&1)
+		WATCHER="${!}"
+
+		# Don't look for the marker until the watch is in place, or we could miss it
+		while read -t 5 -u "${WATCH_FD}" LINE ; do
+			[ "${LINE}" != "Watches established." ] || break
+		done
+	fi
+
 	while ! marker_exists "${MARKER}" ; do
-		if "${FIRST}" ; then
-			flock -u 999 || fail "Failed to release the execution lock for SSL initialization"
-			waiting "Waiting for the ACME certificates to be initialized (up to ${TIMEOUT_STR} total)..."
-		fi
-		FIRST="false"
-
-		# Poke every 100ms (10 times per second)
-		sleep 0.1 || fail "Sleep interrupted"
-		local NOW="$(date +%s)"
-
 		# If the timeout has expired, return a non-zero value
-		[ $(( NOW - START )) -lt ${TIMEOUT} ] || return 1
+		NOW="$(date +%s)"
+		LEFT=$(( TIMEOUT - (NOW - START) ))
+		if [ ${LEFT} -le 0 ] ; then
+			stop_watching
+			return 1
+		fi
+		[ ${LEFT} -le 5 ] || LEFT=5
+
+		if [ -n "${WATCH_FD}" ] ; then
+			RC=0
+			read -t "${LEFT}" -u "${WATCH_FD}" LINE || RC=${?}
+
+			# 0 = something happened, > 128 = timed out ... anything else means the watch
+			# is gone (i.e. the directory doesn't exist), so fall back to polling
+			[ ${RC} -eq 0 ] || [ ${RC} -gt 128 ] || stop_watching
+		else
+			sleep 1 || fail "Sleep interrupted"
+		fi
 	done
+	stop_watching
 	ok "The ACME client is initialized and ready"
 	return 0
 }
