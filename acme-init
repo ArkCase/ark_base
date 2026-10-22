@@ -722,88 +722,23 @@ install_intermediates()
 	return 0
 }
 
-generate_asn1()
-{
-	set_or_default SSL_PBKDF2_ITERATIONS 10000
-
-	local SALT=""
-	local REST=""
-	read SALT REST < <(sha256sum "${SSL_CERTIFICATE}")
-	SALT="${SALT^^}"
-
-	local IV="${SALT:32:32}"
-	local SALT="${SALT:0:32}"
-
-	local KEY=""
-	KEY="$(openssl kdf -keylen 32 -kdfopt digest:SHA256 -kdfopt pass:"${SSL_PASSWORD}" -kdfopt hexsalt:"${SALT}" -kdfopt iter:"${SSL_PBKDF2_ITERATIONS}" PBKDF2)" || { RC=${?} ; echo "Failed to compute the encryption key for the SSL private key" 1>&2 ; return ${RC} ; }
-	KEY="${KEY//:/}"
-
-	local ENCRYPTED=""
-	ENCRYPTED="$(openssl rsa -in "${SSL_PRIVATE_KEY}" -outform DER | openssl enc -nosalt -a -aes-256-cbc -K "${KEY}" -iv "${IV}")" || { RC=${?} ; echo "Failed to encrypt the SSL private key" 1>&2 ; return ${RC} ; }
-
-	local HEX=""
-	HEX="$(echo -n "${ENCRYPTED}" | base64 -d | od -An -v -t x1 | tr '[:lower:]' '[:upper:]' | tr -d '\n[:space:]')"
-
-	cat <<-EOF
-	asn1 = SEQUENCE:encrypted_private_key_info
-
-	[encrypted_private_key_info]
-	encryptionAlgorithm = SEQUENCE:pbes2_algo
-	encryptedData = FORMAT:HEX,OCTETSTRING:${HEX}
-
-	[pbes2_algo]
-	id = OID:1.2.840.113549.1.5.13
-	# id = OID:pbes2
-	parameters = SEQUENCE:pbes2_params
-
-	[pbes2_params]
-	keyDerivationFunc = SEQUENCE:pbkdf2_algo
-	encryptionScheme = SEQUENCE:aes256_cbc_algo
-
-	[pbkdf2_algo]
-	id = OID:1.2.840.113549.1.5.12
-	# id = OID:pkcs5PBKDF2
-	parameters = SEQUENCE:pbkdf2_params
-
-	[pbkdf2_params]
-	salt = FORMAT:HEX,OCTETSTRING:${SALT}
-	iterationCount = INT:${SSL_PBKDF2_ITERATIONS}
-	prf = SEQUENCE:prf_algo
-
-	[prf_algo]
-	id = OID:1.2.840.113549.2.9
-	# id = OID:hmacWithSHA256
-	parameters = NULL
-
-	[aes256_cbc_algo]
-	id = OID:2.16.840.1.101.3.4.1.42
-	# id = OID:aes-256-cbc
-	iv = FORMAT:HEX,OCTETSTRING:${IV}
-	EOF
-}
-
 render_encrypted_key()
 {
 	#
-	# The OpenSSL version in Ubuntu 24.04 FIPS is buggy and has a hardcoded salt size
-	# of 8 bytes. For FIPS we need 16, so we have to jump through some extra hoops to
-	# generate a properly encrypted private key file.
+	# The OpenSSL version in Ubuntu 24.04 FIPS has a hardcoded salt size of 8 bytes
+	# for PKCS#8 encryption. For FIPS we need 16, so pkcs8-encrypt is used instead.
+	# The password is read from the environment, so it's never on any command line.
 	#
-	say "🔒 Creating a PKCS#8 encrypted version of the key (AES-256-CBC)..."
+	say "🔒 Creating a PKCS#8 encrypted version of the key (PBES2 with AES-256-CBC)..."
 
-	local ASN1=""
-	ASN1="$(generate_asn1)" || fail "Failed to generate the ASN1 configuration (rc=${?})"
+	local ARGS=( SSL_PASSWORD )
+	set_or_default SSL_PBKDF2_ITERATIONS
+	[ -n "${SSL_PBKDF2_ITERATIONS}" ] && ARGS+=( "${SSL_PBKDF2_ITERATIONS}" )
 
-	local BASE64=""
-	BASE64="$(openssl asn1parse -noout -genconf <(echo -n "${ASN1}") -out >(base64 -w 64))" || fail "Failed to generate the ASN1 DER payload (rc=${?})"
-
-	cat <<-EOF > "${SSL_PRIVATE_KEY_ENCRYPTED}" || fail "Failed to write the encrypted key out to [${SSL_PRIVATE_KEY_ENCRYPTED}] (rc=${?})"
-	-----BEGIN ENCRYPTED PRIVATE KEY-----
-	${BASE64}
-	-----END ENCRYPTED PRIVATE KEY-----
-	EOF
+	local OUT=""
+	OUT="$( { openssl pkcs8 -topk8 -nocrypt -outform DER -in "${SSL_PRIVATE_KEY}" | pkcs8-encrypt "${ARGS[@]}" > "${SSL_PRIVATE_KEY_ENCRYPTED}" ; } 2>&1 )" || fail "Failed to render the encrypted key at [${SSL_PRIVATE_KEY_ENCRYPTED}] (rc=${?}): ${OUT}"
 	PUBLIC_FILES+=( "${SSL_PRIVATE_KEY_ENCRYPTED}" )
-	ok "AES-256 (PKCS8) Encrypted key ready!"
+	ok "PKCS#8 encrypted key ready!"
 	return 0
 }
 
