@@ -1,0 +1,179 @@
+#!/usr/bin/python3
+#
+# usage: pkcs8-encrypt [KEY_VARIABLE_NAME [ITERATIONS]]
+#
+# Encrypts an unencrypted PKCS#8 private key (DER-encoded, as rendered by
+# "openssl pkcs8 -topk8 -nocrypt -outform DER") read from STDIN, and writes it
+# to STDOUT as a
+# PEM-encoded PKCS#8 encrypted private key, which can be read with
+# "openssl pkcs8". Note that "openssl pkey -outform DER" may render other
+# formats (i.e. PKCS#1 for RSA keys), which aren't accepted.
+#
+# The key is encrypted using PBES2, with PBKDF2 (HMAC-SHA256) and AES-256-CBC.
+# The password is read from the environment variable named KEY_VARIABLE_NAME
+# (default: ENCRYPTION_KEY), or DEFAULT_${KEY_VARIABLE_NAME} if that one is
+# empty, as aes-crypt does. A password is required. ITERATIONS defaults to the
+# number of PBKDF2 iterations used by aes-crypt.
+#
+# The salt and IV are random, and all the cryptography is performed by the
+# system's OpenSSL library through aes-crypt, so it's subject to the FIPS
+# provider when that's enabled. The password and derived key are never placed
+# on any command line.
+#
+# AES-256-CBC is used because PBES2 doesn't support AEAD ciphers (i.e. GCM),
+# so OpenSSL wouldn't be able to read the encrypted key otherwise.
+#
+import base64
+import hashlib
+import importlib.machinery
+import importlib.util
+import os
+import re
+import sys
+
+# Load aes-crypt (which lives alongside this script) as a module, without
+# leaving a __pycache__ directory behind
+sys.dont_write_bytecode = True
+AES_CRYPT = os.path.join(os.path.dirname(os.path.realpath(__file__)), "aes-crypt")
+loader = importlib.machinery.SourceFileLoader("aes_crypt", AES_CRYPT)
+spec = importlib.util.spec_from_loader("aes_crypt", loader)
+aes_crypt = importlib.util.module_from_spec(spec)
+loader.exec_module(aes_crypt)
+
+OID_PBES2 = "1.2.840.113549.1.5.13"
+OID_PBKDF2 = "1.2.840.113549.1.5.12"
+OID_HMAC_SHA256 = "1.2.840.113549.2.9"
+OID_AES_256_CBC = "2.16.840.1.101.3.4.1.42"
+
+IV_SIZE = 16
+
+def fail(msg):
+	aes_crypt.fail(msg)
+
+def usage():
+	fail(f"usage: {os.path.basename(sys.argv[0])} [KEY_VARIABLE_NAME [ITERATIONS]]")
+
+#
+# Minimal DER encoding, enough for an EncryptedPrivateKeyInfo structure
+#
+def der(tag, content):
+	length = len(content)
+	if length < 0x80:
+		header = bytes([length])
+	else:
+		size = length.to_bytes((length.bit_length() + 7) // 8, "big")
+		header = bytes([0x80 | len(size)]) + size
+	return bytes([tag]) + header + content
+
+def der_sequence(*items):
+	return der(0x30, b"".join(items))
+
+def der_integer(value):
+	return der(0x02, value.to_bytes((value.bit_length() // 8) + 1, "big"))
+
+def der_octet_string(value):
+	return der(0x04, value)
+
+def der_null():
+	return der(0x05, b"")
+
+def der_oid(oid):
+	parts = [int(p) for p in oid.split(".")]
+	encoded = bytes([(parts[0] * 40) + parts[1]])
+	for part in parts[2:]:
+		chunk = [part & 0x7F]
+		part >>= 7
+		while part:
+			chunk.insert(0, 0x80 | (part & 0x7F))
+			part >>= 7
+		encoded += bytes(chunk)
+	return der(0x06, encoded)
+
+#
+# Returns the (tag, content, rest) tuple for the DER element at the start of data
+#
+def der_read(data):
+	if len(data) < 2:
+		return None
+	tag = data[0]
+	length = data[1]
+	offset = 2
+	if length & 0x80:
+		size = length & 0x7F
+		if (size == 0) or (len(data) < (offset + size)):
+			return None
+		length = int.from_bytes(data[offset:offset + size], "big")
+		offset += size
+	if len(data) < (offset + length):
+		return None
+	return (tag, data[offset:offset + length], data[offset + length:])
+
+def is_private_key_info(data):
+	# PrivateKeyInfo ::= SEQUENCE { INTEGER, AlgorithmIdentifier (SEQUENCE), OCTET STRING, ... }
+	outer = der_read(data)
+	if (not outer) or (outer[0] != 0x30) or outer[2]:
+		return False
+	content = outer[1]
+	for tag in (0x02, 0x30, 0x04):
+		element = der_read(content)
+		if (not element) or (element[0] != tag):
+			return False
+		content = element[2]
+	return True
+
+def main():
+	if len(sys.argv) > 3:
+		usage()
+
+	key_var = aes_crypt.DEFAULT_KEY_VAR
+	if len(sys.argv) > 1:
+		key_var = sys.argv[1]
+		if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", key_var):
+			fail(f"Invalid variable name [{key_var}]")
+
+	iterations = aes_crypt.ITERATIONS
+	if len(sys.argv) > 2 and sys.argv[2]:
+		if not re.match(r"^[1-9][0-9]*$", sys.argv[2]):
+			fail(f"Invalid number of iterations [{sys.argv[2]}]")
+		iterations = int(sys.argv[2])
+
+	password = aes_crypt.get_password(key_var)
+	if not password:
+		fail(f"No password was found in the {key_var} environment variable")
+
+	# This must be a PKCS#8 PrivateKeyInfo, or the result would be unreadable
+	data = sys.stdin.buffer.read()
+	if not is_private_key_info(data):
+		fail("The input is not a DER-encoded PKCS#8 private key")
+
+	salt = aes_crypt.random_bytes(aes_crypt.SALT_SIZE)
+	iv = aes_crypt.random_bytes(IV_SIZE)
+	key = hashlib.pbkdf2_hmac("sha256", password, salt, iterations, aes_crypt.KEY_SIZE)
+	encrypted, iv, tag = aes_crypt.run_cipher("AES-256-CBC", True, key, iv, data)
+
+	info = der_sequence(
+		der_sequence(
+			der_oid(OID_PBES2),
+			der_sequence(
+				der_sequence(
+					der_oid(OID_PBKDF2),
+					der_sequence(
+						der_octet_string(salt),
+						der_integer(iterations),
+						der_sequence(der_oid(OID_HMAC_SHA256), der_null()),
+					),
+				),
+				der_sequence(der_oid(OID_AES_256_CBC), der_octet_string(iv)),
+			),
+		),
+		der_octet_string(encrypted),
+	)
+
+	encoded = base64.b64encode(info).decode()
+	sys.stdout.write("-----BEGIN ENCRYPTED PRIVATE KEY-----\n")
+	for n in range(0, len(encoded), 64):
+		sys.stdout.write(encoded[n:n + 64] + "\n")
+	sys.stdout.write("-----END ENCRYPTED PRIVATE KEY-----\n")
+
+if __name__ == "__main__":
+	main()
