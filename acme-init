@@ -438,6 +438,7 @@ compute_certificate_san()
 	# The string may have multiple basenames (no dots!),
 	# and be separated by commas, spaces, or colons
 	while read EXTRA_NAME ; do
+		[[ "${EXTRA_NAME}" =~ [.] ]] && fail "Invalid value in SSL_SERVICE_EXTRA_NAMES: [${EXTRA_NAME}] - may not contain dots"
 		is_valid_hostname_part "${EXTRA_NAME}" || continue
 		SAN+=( $(list_hostname_variations "${EXTRA_NAME}" "${VARIATIONS[@]}") )
 	done < <(split_hostnames "${SSL_SERVICE_EXTRA_NAMES}")
@@ -716,7 +717,7 @@ install_intermediates()
 		sed -e '0,/-----END CERTIFICATE-----/d' < "${SRC}" > "${SSL_CA_INT}" || fail "Failed to extract the intermediate CAs from the signed bundle (rc=${?})"
 		PUBLIC_FILES+=( "${SSL_CA_INT}" )
 		ok "Intermediates ready!"
-		install_chain "${OS_SSL_ANCHORS}/ca-int" "${OS_SSL_SUFFIX}" < "${SSL_CA_INT}"
+		install_chain "${OS_SSL_ANCHORS}/ca-int" "${OS_SSL_SUFFIX}" < "${SSL_CA_INT}" || fail "Failed to install the certificate chain from [${SSL_CA_INT}]"
 	fi
 	return 0
 }
@@ -1108,7 +1109,7 @@ update_trusts()
 	OUT="$(umask 0022 && execute "${OS_SSL_UPDATE_CMD[@]}" 2>&1)" || fail "Failed to update the CA trusts (rc=${?}): ${OUT}"
 	ok "CA trusts updated system-wide!"
 
-	as_boolean "${KEYTOOL}" && import_java_trusts
+	import_java_trusts
 	return 0
 }
 
