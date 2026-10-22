@@ -1214,11 +1214,12 @@ relax_permissions()
 
 finalize()
 {
+	local RC=${?}
 	# Some of the garbage may already be gone, which mustn't stop us
 	[ -v GARBAGE ] && { shred -u "${GARBAGE[@]}" &>/dev/null || true ; }
 
 	# Shortcut - die early!
-	as_boolean "${RESULT_OK}" || return 0
+	as_boolean "${RESULT_OK}" || return ${RC}
 
 	# Output the environment file
 	local DIR="$(dirname "${SSL_ENV_FILE}")"
@@ -1257,6 +1258,7 @@ finalize()
 	chown "${KEY_OWNER}:${ACM_GROUP}" "${ENV_FILE}"
 	chmod u=r,go= "${ENV_FILE}"
 	mv -f "${ENV_FILE}" "${SSL_ENV_FILE}"
+	return ${RC}
 }
 
 
