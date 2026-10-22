@@ -40,7 +40,7 @@ split_hostnames()
 		echo "${@}" | split_hostnames
 	else
 		# The values may be separated by commas, colons, or whitespace
-		tr -c '[.a-zA-Z0-9-]' '\n' | sed -e '/^\s*$/d'
+		tr ',:[:space:]' '\n' | sed -e '/^\s*$/d'
 	fi
 	return 0
 }
