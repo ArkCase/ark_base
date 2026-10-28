@@ -28,6 +28,9 @@ Defaults!ACME_INIT env_keep += "SSL_PBKDF2_ITERATIONS"
 Defaults!ACME_INIT env_keep += "SSL_PRIVATE_KEY"
 Defaults!ACME_INIT env_keep += "SSL_PRIVATE_KEY_ENCRYPTED"
 
+# This is necessary for FIPS support
+Defaults!ACME_INIT env_keep += "OPENSSL_*"
+
 # The certificate's names (the *_SERVICE_HOST values are validated as IPv4 addresses)
 Defaults!ACME_INIT env_keep += "*_SERVICE_HOST"
 Defaults!ACME_INIT env_keep += "LOCAL_DEV_HOSTNAME"
