@@ -2,5 +2,5 @@
 #
 # Remove group and other write permissions from sensitive locations
 #
-find /usr /lib -type d | \
-	xargs -L 100 -P 10 chmod --changes go-w
+find /usr /lib -type d -print0 | \
+	xargs -0 -L 100 -P 10 chmod --changes go-w
