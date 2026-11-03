@@ -117,6 +117,8 @@ ENV ACM_GID="${ACM_GID}"
 # Configure curl
 ENV CURL_HOME="/etc/curl"
 
+ENV DEFAULT_ENTRYPOINT "/usr/local/bin/entrypoint"
+
 RUN --mount=type=bind,target=/src \
     --mount=type=bind,from=scripts,target=/scripts \
     --mount=type=bind,from=step,target=/step \
@@ -190,5 +192,4 @@ RUN --mount=type=bind,target=/src \
 # can execute relative to this path.
 WORKDIR "${HOME}"
 
-ENTRYPOINT [ "container-entrypoint" ]
-CMD [ "base-usage" ]
+ENTRYPOINT [ "/entrypoint" ]
