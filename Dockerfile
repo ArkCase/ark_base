@@ -39,7 +39,7 @@ ARG SCRIPTS_REGISTRY="${BASE_REGISTRY}"
 ARG SCRIPTS_REPO="arkcase/base-container-scripts"
 ARG SCRIPTS_VER="latest"
 ARG SCRIPTS_VER_PFX="${BASE_VER_PFX}"
-ARG SCRIPTS_IMG="${SCRIPTS_REGISTRY}/${SCRIPTS_REPO}:${SCRIPTS_VER_PFX}${SCRIPTS_VER}"
+ARG SCRIPTS_IMG="${SCRIPTS_REGISTRY}/${SCRIPTS_REPO}${FIPS}:${SCRIPTS_VER_PFX}${SCRIPTS_VER}"
 
 ARG STEP_REGISTRY="${PRIVATE_REGISTRY}"
 ARG STEP_REPO="arkcase/rebuild-step-ca"
@@ -107,7 +107,20 @@ ENV LANGUAGE="en_US:en"
 ENV LANG="en_US.${CHARSET}"
 ENV LC_ALL="${LANG}"
 
-RUN mkdir -p "${HOME}/.pki/nssdb" && \
+# Reset permissions of modified directories and add default user. We remove the "tape"
+# and "floppy" groups because they can interfere with other stuff we're interested in.
+#
+# In that same vein, we remap the GID for sudo from 27 to 25
+ENV ACM_GROUP="${ACM_GROUP}"
+ENV ACM_GID="${ACM_GID}"
+
+# Configure curl
+ENV CURL_HOME="/etc/curl"
+
+RUN --mount=type=bind,target=/src \
+    --mount=type=bind,from=scripts,target=/scripts \
+    --mount=type=bind,from=step,target=/step \
+    mkdir -p "${HOME}/.pki/nssdb" && \
     echo "${LANG} ${CHARSET}" > /etc/locale.gen && \
     echo "LANG=${LANG}" > /etc/default/locale && \
     userdel --remove ubuntu && \
@@ -147,13 +160,9 @@ RUN mkdir -p "${HOME}/.pki/nssdb" && \
         xz-utils \
         zip \
       && \
-    apt-get clean
-
-# Reset permissions of modified directories and add default user. We remove the "tape"
-# and "floppy" groups because they can interfere with other stuff we're interested in.
-#
-# In that same vein, we remap the GID for sudo from 27 to 25
-RUN groupadd --gid "${DEF_GID}" "${DEF_GROUP}" && \
+    apt-get clean && \
+    mkdir -p "${HOME}" && \
+    groupadd --gid "${DEF_GID}" "${DEF_GROUP}" && \
     useradd --uid "${DEF_UID}" --gid "${DEF_GID}" --home-dir "${HOME}" --shell /sbin/nologin \
         --comment "Default Application User" "${DEF_USER}" && \
     groupdel tape && \
@@ -161,39 +170,21 @@ RUN groupadd --gid "${DEF_GID}" "${DEF_GROUP}" && \
     groupmod --gid 25 sudo && \
     mkdir -p "${HOME}/bin" "${APP_ROOT}/bin" && \
     chown -R "${DEF_USER}:${DEF_GROUP}" "${APP_ROOT}" "${HOME}" && \
-    chmod -R u=rwX,g=rX,o=X "${APP_ROOT}" "${HOME}"
-
-# Install step
-COPY --chown=root:root --chmod=0755 --from=step /step /usr/local/bin/
-
-# Define the ACM_GROUP
-ENV ACM_GROUP="${ACM_GROUP}"
-ENV ACM_GID="${ACM_GID}"
-RUN groupadd --gid "${ACM_GID}" "${ACM_GROUP}"
-
-# Add the acme-init stuff (only accessible by ACM_GROUP)
-COPY --chown=root:${ACM_GROUP} --chmod=0750 scripts/ /usr/local/bin/
-COPY --chown=root:root --chmod=0640 00-acme-init /etc/sudoers.d
-RUN sed -i -e "s;\${ACM_GROUP};${ACM_GROUP};g" /etc/sudoers.d/00-acme-init
-
-# Copy extra files to the image, and fix permissions for sensitive directories
-COPY ./core/root/ /
-
-# Add the common-use functions
-COPY --chown=root:root --chmod=0755 --from=scripts /usr/local/bin/ /usr/local/bin/
-COPY --chown=root:root --chmod=0444 --from=scripts /.functions /.functions
-
-# STIG Remediations
-RUN --mount=type=bind,source=stig,target=/stig run-stig /stig
-
-ENV CURL_HOME="/etc/curl"
-COPY --chown=root:root --chmod=0644 curlrc "${CURL_HOME}/.curlrc"
-
-RUN mkdir -p "${BASE_DIR}" "${CONF_DIR}" "${DATA_DIR}" "${LOGS_DIR}" "${TEMP_DIR}" && \
-    chmod -R ug=rwX,o= "${TEMP_DIR}"
-
-# FINAL STEP: ensure all sensitive directories are duly protected
-RUN secure-permissions
+    chmod -R u=rwX,g=rX,o=X "${APP_ROOT}" "${HOME}" && \
+    groupadd --gid "${ACM_GID}" "${ACM_GROUP}" && \
+    ( cd /src/core/root && tar --owner=root --group=root --mode=u=rwX,go=rX -cf - . ) | tar -C / -xvf - && \
+    ( cd /src/scripts && tar --owner=root --group="${ACM_GROUP}" --mode=u=rwX,g=rX,o= -cf - . ) | tar -C /usr/local/bin -xvf - && \
+    sed -e "s;\${ACM_GROUP};${ACM_GROUP};g" < /src/00-ssl-init > /etc/sudoers.d/00-ssl-init && \
+    mkdir -p "${BASE_DIR}" "${CONF_DIR}" "${DATA_DIR}" "${LOGS_DIR}" "${TEMP_DIR}" && \
+    chmod -R ug=rwX,o= "${TEMP_DIR}" && \
+    ( cd /scripts && tar --owner=root --group=root --mode=u=rwX,go=rX -cf - . ) | tar -C / -xvf - && \
+    mkdir -p "${CURL_HOME}" && \
+    cp /src/curlrc "${CURL_HOME}/.curlrc" && \
+    chown -R root:root "${CURL_HOME}" && \
+    chmod u=rwX,go=rX "${CURL_HOME}" && \
+    install -o root -g root -m 0755 /step/step /usr/local/bin && \
+    run-stig /src/stig && \
+    secure-permissions
 
 # Directory with the sources is set as the working directory so all STI scripts
 # can execute relative to this path.

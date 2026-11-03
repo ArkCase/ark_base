@@ -1,0 +1,70 @@
+#
+# Members of ${ACM_GROUP} may run ssl-init as root. The caller's environment
+# is reset (sudo's default behavior), the PATH is fixed, and only the variables
+# that ssl-init consumes are passed through. All of these settings apply only
+# to running ssl-init through this rule, and to nothing else.
+#
+Cmnd_Alias SSL_INIT = /usr/local/bin/ssl-init
+
+Defaults!SSL_INIT secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# Where things live
+Defaults!SSL_INIT env_keep += "BASE_DIR"
+Defaults!SSL_INIT env_keep += "FIPS_DIR"
+Defaults!SSL_INIT env_keep += "K8S_CA"
+Defaults!SSL_INIT env_keep += "SSL_DIR"
+Defaults!SSL_INIT env_keep += "SSL_ENV_FILE"
+Defaults!SSL_INIT env_keep += "SSL_TRUSTS_DIR"
+
+# The certificate, its key, and the key's password
+Defaults!SSL_INIT env_keep += "SSL_CA_CHAIN"
+Defaults!SSL_INIT env_keep += "SSL_CA_INT"
+Defaults!SSL_INIT env_keep += "SSL_CA_ROOT"
+Defaults!SSL_INIT env_keep += "SSL_CERTIFICATE"
+Defaults!SSL_INIT env_keep += "SSL_DH_APPEND"
+Defaults!SSL_INIT env_keep += "SSL_PASSWORD"
+Defaults!SSL_INIT env_keep += "SSL_PASSWORD_FILE"
+Defaults!SSL_INIT env_keep += "SSL_PBKDF2_ITERATIONS"
+Defaults!SSL_INIT env_keep += "SSL_PRIVATE_KEY"
+Defaults!SSL_INIT env_keep += "SSL_PRIVATE_KEY_ENCRYPTED"
+
+# The certificate and key given to us
+Defaults!SSL_INIT env_keep += "SSL_PROVIDED_CA_ROOT"
+Defaults!SSL_INIT env_keep += "SSL_PROVIDED_CERTIFICATE"
+Defaults!SSL_INIT env_keep += "SSL_PROVIDED_DIR"
+Defaults!SSL_INIT env_keep += "SSL_PROVIDED_PRIVATE_KEY"
+
+# The certificate's names (the *_SERVICE_HOST values are validated as IPv4 addresses)
+Defaults!SSL_INIT env_keep += "*_SERVICE_HOST"
+Defaults!SSL_INIT env_keep += "LOCAL_DEV_HOSTNAME"
+Defaults!SSL_INIT env_keep += "POD_IP"
+Defaults!SSL_INIT env_keep += "SSL_EXTRA_SAN"
+Defaults!SSL_INIT env_keep += "SSL_EXTRA_SAN_STRICT"
+Defaults!SSL_INIT env_keep += "SSL_SERVICE_EXTRA_NAMES"
+
+# The ACME CA
+Defaults!SSL_INIT env_keep += "ACME_PASSWORD_FILE"
+Defaults!SSL_INIT env_keep += "ACME_SERVICE_NAME"
+Defaults!SSL_INIT env_keep += "ACME_URL"
+Defaults!SSL_INIT env_keep += "ACME_WAIT"
+Defaults!SSL_INIT env_keep += "ACME_WAIT_TIMEOUT"
+
+# Java
+Defaults!SSL_INIT env_keep += "JAVA_GLOBAL_TRUSTSTORE"
+Defaults!SSL_INIT env_keep += "JAVA_GLOBAL_TRUSTSTORE_PASSWORD"
+Defaults!SSL_INIT env_keep += "JAVA_GLOBAL_TRUSTSTORE_PROVIDER"
+Defaults!SSL_INIT env_keep += "JAVA_GLOBAL_TRUSTSTORE_PROVIDER_CLASS"
+Defaults!SSL_INIT env_keep += "JAVA_GLOBAL_TRUSTSTORE_TYPE"
+Defaults!SSL_INIT env_keep += "JAVA_SSL_KEYSTORE_PROVIDER"
+Defaults!SSL_INIT env_keep += "JAVA_SSL_KEYSTORE_PROVIDER_ARGS"
+Defaults!SSL_INIT env_keep += "JAVA_SSL_KEYSTORE_PROVIDER_CLASS"
+Defaults!SSL_INIT env_keep += "JAVA_SSL_KEYSTORE_PROVIDER_PATH"
+Defaults!SSL_INIT env_keep += "JAVA_SSL_KEYSTORE_TYPE"
+
+# Everything else
+Defaults!SSL_INIT env_keep += "ACM_GROUP"
+Defaults!SSL_INIT env_keep += "DEFAULT_GOLANG_FIPS_MODE"
+Defaults!SSL_INIT env_keep += "GODEBUG"
+Defaults!SSL_INIT env_keep += "GOLANG_FIPS_MODE"
+
+%${ACM_GROUP}	ALL=(root) NOPASSWD: SSL_INIT

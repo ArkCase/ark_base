@@ -1,4 +1,23 @@
 #!/bin/bash
+#
+# Renders the pod's SSL files. If a certificate was provided then it's used, and
+# otherwise one is requested from the ACME CA using step:
+#
+#	SSL_PROVIDED_DIR		directory for the defaults below (default: /.ssl.provided)
+#	SSL_PROVIDED_CERTIFICATE	PEM certificate, followed by any intermediates, in order
+#					(default: ${SSL_PROVIDED_DIR}/cert.pem)
+#	SSL_PROVIDED_PRIVATE_KEY	unencrypted PEM private key, which must be in PKCS#1 format
+#					to match the requested ones (default: ${SSL_PROVIDED_DIR}/key.pem)
+#	SSL_PROVIDED_CA_ROOT		PEM root CA for the certificate
+#					(default: ${SSL_PROVIDED_DIR}/ca-root.pem)
+#
+# All three are required, may not be inside SSL_DIR, and are copied into it. The root
+# CA must already be in the system's trusts (OS_SSL_CA_TRUSTS), either as part of the
+# image, or deployed from SSL_TRUSTS_DIR.
+#
+# If none of the files exist, and none of the variables were set, then the certificate
+# is requested. If none of the files exist but a variable was set, it's an error.
+#
 [ $(id -u) -eq 0 ] || exec sudo --non-interactive "${0}" "${@}"
 
 set -euo pipefail
@@ -24,6 +43,7 @@ export CURL_HOME="/etc/curl"
 #
 set_or_default BASE_DIR "/app"
 set_or_default FIPS_DIR "${BASE_DIR}/fips"
+set_or_default KEYSTORE_TOOL "/usr/local/bin/keystore-tool.jar"
 
 export DEFAULT_JAVA_SSL_KEYSTORE_TYPE="BCFKS"
 export DEFAULT_JAVA_SSL_KEYSTORE_PROVIDER="BCFIPS"
@@ -198,6 +218,21 @@ is_ca()
 	return 0
 }
 
+split_certificates()
+{
+	# usage: split_certificates DEST < INPUT
+	#
+	# Split each certificate into its own file (DEST/xxNNNN), ignoring everything
+	# else (i.e. comments, openssl s_client's output, DOS line endings, etc.)
+	local DEST="${1}"
+	awk -v DEST="${DEST}" '
+		{ sub(/\r$/, "") }
+		/^-+BEGIN CERTIFICATE-+$/ { FILE = sprintf("%s/xx%04d", DEST, ++N) }
+		FILE { print > FILE }
+		/^-+END CERTIFICATE-+$/ { if (FILE) close(FILE) ; FILE = "" }
+	'
+}
+
 install_chain()
 {
 	local CERT_BASE_NAME="${1}"
@@ -206,15 +241,8 @@ install_chain()
 	local DEST=""
 	DEST="$(mktemp -d)" || return ${?}
 
-	# Split each certificate into its own file, ignoring everything else
-	# (i.e. comments, openssl s_client's output, DOS line endings, etc.)
 	local RC=0
-	awk -v DEST="${DEST}" '
-		{ sub(/\r$/, "") }
-		/^-+BEGIN CERTIFICATE-+$/ { FILE = sprintf("%s/xx%02d", DEST, ++N) }
-		FILE { print > FILE }
-		/^-+END CERTIFICATE-+$/ { if (FILE) close(FILE) ; FILE = "" }
-	' || RC=${?}
+	split_certificates "${DEST}" || RC=${?}
 
 	local COUNT=0
 	local n=""
@@ -463,9 +491,9 @@ compute_certificate_san()
 	# Make sure the cluster domain is formatted correctly, removing any leading
 	# or trailing spaces, and multiple consecutive spaces get collapsed into a
 	# single dot, yielding a valid domain name
-	CLUSTER_DOMAIN="$(echo -n "${REST}" | sed -e 's;^\s*;;g' -e 's;\s*$;;g' -e 's;\s\+;.;g')"
+	local CLUSTER_DOMAIN="$(echo -n "${REST}" | sed -e 's;^\s*;;g' -e 's;\s*$;;g' -e 's;\s\+;.;g')"
 
-	VARIATIONS=( "${NAMESPACE}" "${SVC}" "${CLUSTER_DOMAIN}" )
+	local VARIATIONS=( "${NAMESPACE}" "${SVC}" "${CLUSTER_DOMAIN}" )
 
 	SAN=( ${FQDN} $(list_hostname_variations "${POD}" "${SERVICE}" "${VARIATIONS[@]}") )
 
@@ -509,6 +537,7 @@ compute_certificate_san()
 	if is_valid_hostname "${LOCAL_DEV_HOSTNAME}" ; then
 		# This should be an instant resolve for our developer machines. A lookup
 		# failure (i.e. a timeout) simply means we're not on one of them
+		local LOCAL_DEV_IPV4=""
 		LOCAL_DEV_IPV4="$(dig +short +timeout=1 +retry=0 "${LOCAL_DEV_HOSTNAME}" 2>/dev/null)" || LOCAL_DEV_IPV4=""
 		if is_valid_ipv4 "${LOCAL_DEV_IPV4}" ; then
 			warn "Adding the local development SAN entries: ${LOCAL_DEV_HOSTNAME}/${LOCAL_DEV_IPV4}"
@@ -603,9 +632,9 @@ initialize()
 		SSL_CA_TRUSTS
 	)
 
-	# These are only published if a certificate is actually generated, since
-	# some containers only need the trusts. The Java options are only added
-	# to JAVAX_NET_SSL_OPTS in that case, too
+	# These are only published if there's a certificate, since some containers
+	# only need the trusts. The Java options are only added to JAVAX_NET_SSL_OPTS
+	# in that case, too
 	CERT_ENV_FILE_VARS=(
 		SSL_PRIVATE_KEY
 		SSL_PRIVATE_KEY_ENCRYPTED
@@ -770,17 +799,96 @@ initialize()
 	return 0
 }
 
+test_certificate()
+{
+	#
+	# usage: test_certificate CERTIFICATE PRIVATE_KEY ROOT TRUSTS
+	#
+	# Returns 0 if the certificate and the (unencrypted) private key are a pair, the
+	# certificate (with any intermediates it carries) descends from the root CA ROOT,
+	# and that root CA is trusted by the PEM bundle TRUSTS. Otherwise, reports the
+	# reason and returns non-0.
+	#
+	# This is a stand-in for a common-use script, so it depends on nothing else from
+	# this script, and doesn't exit
+	#
+	local CERTIFICATE="${1:-}"
+	local PRIVATE_KEY="${2:-}"
+	local ROOT="${3:-}"
+	local TRUSTS="${4:-}"
+	local OUT=""
+	local PUBLIC_FROM_CERT=""
+	local PUBLIC_FROM_KEY=""
+
+	# Compare the public keys instead of the moduli, since not all keys are RSA
+	PUBLIC_FROM_CERT="$(openssl x509 -noout -pubkey -in "${CERTIFICATE}" 2>&1)" || { err "Failed to read the certificate [${CERTIFICATE}] (rc=${?}): ${PUBLIC_FROM_CERT}" ; return 1 ; }
+	PUBLIC_FROM_KEY="$(openssl pkey -pubout -passin "pass:" -in "${PRIVATE_KEY}" 2>&1)" || { err "Failed to read the private key [${PRIVATE_KEY}] (rc=${?}): ${PUBLIC_FROM_KEY}" ; return 1 ; }
+	[ "${PUBLIC_FROM_CERT}" == "${PUBLIC_FROM_KEY}" ] || { err "The private key [${PRIVATE_KEY}] doesn't match the certificate [${CERTIFICATE}]" ; return 1 ; }
+
+	# The whole tree must lead to this root, and nothing else is trusted for this check
+	OUT="$(openssl verify -no-CApath -no-CAstore -CAfile "${ROOT}" -untrusted "${CERTIFICATE}" "${CERTIFICATE}" 2>&1)" || { err "The certificate [${CERTIFICATE}] doesn't descend from the root CA [${ROOT}] (rc=${?}): ${OUT}" ; return 1 ; }
+
+	# A self-signed certificate only passes this if that same certificate is in the bundle
+	OUT="$(openssl verify -no-CApath -no-CAstore -CAfile "${TRUSTS}" "${ROOT}" 2>&1)" || { err "The root CA [${ROOT}] isn't trusted by [${TRUSTS}] (rc=${?}): ${OUT}" ; return 1 ; }
+	return 0
+}
+
+is_inside_ssl_dir()
+{
+	# Check both the path as given, and where it really leads
+	local DIR="$(readlink -m "${SSL_DIR}")"
+	[[ "$(realpath -sm "${1}")" == "$(realpath -sm "${SSL_DIR}")/"* ]] && return 0
+	[[ "$(readlink -m "${1}")" == "${DIR}/"* ]] && return 0
+	return 1
+}
+
+select_certificate_source()
+{
+	CERTIFICATE_PROVIDED="true"
+
+	# This must be computed first, since set_or_default will set them
+	local VARIABLES_SET="false"
+	if [ -v SSL_PROVIDED_CERTIFICATE ] || [ -v SSL_PROVIDED_PRIVATE_KEY ] || [ -v SSL_PROVIDED_CA_ROOT ] ; then
+		VARIABLES_SET="true"
+	fi
+
+	set_or_default SSL_PROVIDED_DIR "/.ssl.provided"
+	set_or_default SSL_PROVIDED_CERTIFICATE "${SSL_PROVIDED_DIR}/cert.pem"
+	set_or_default SSL_PROVIDED_PRIVATE_KEY "${SSL_PROVIDED_DIR}/key.pem"
+	set_or_default SSL_PROVIDED_CA_ROOT "${SSL_PROVIDED_DIR}/ca-root.pem"
+
+	if ! is_file "${SSL_PROVIDED_CERTIFICATE}" && ! is_file "${SSL_PROVIDED_PRIVATE_KEY}" && ! is_file "${SSL_PROVIDED_CA_ROOT}" ; then
+		as_boolean "${VARIABLES_SET}" && fail "SSL_PROVIDED_CERTIFICATE, SSL_PROVIDED_PRIVATE_KEY and/or SSL_PROVIDED_CA_ROOT are set, but none of [${SSL_PROVIDED_CERTIFICATE}], [${SSL_PROVIDED_PRIVATE_KEY}] or [${SSL_PROVIDED_CA_ROOT}] exist"
+
+		# Nothing was provided, so the certificate has to be requested
+		say "📨 No certificate was provided, it will be requested"
+		CERTIFICATE_PROVIDED="false"
+		return 0
+	fi
+
+	is_inside_ssl_dir "${SSL_PROVIDED_CERTIFICATE}" && fail "The certificate [${SSL_PROVIDED_CERTIFICATE}] may not be inside SSL_DIR [${SSL_DIR}]"
+	is_inside_ssl_dir "${SSL_PROVIDED_PRIVATE_KEY}" && fail "The private key [${SSL_PROVIDED_PRIVATE_KEY}] may not be inside SSL_DIR [${SSL_DIR}]"
+	is_inside_ssl_dir "${SSL_PROVIDED_CA_ROOT}" && fail "The root CA [${SSL_PROVIDED_CA_ROOT}] may not be inside SSL_DIR [${SSL_DIR}]"
+	return 0
+}
+
+
+
 install_intermediates()
 {
-	# Extract the certificate and any intermediates chain (don't import, will happen automatically later)
-	local SRC="${1}"
-	if [ $(grep -c -- "-----END CERTIFICATE-----" "${SRC}") -gt 1 ] ; then
-		say "📂 Extracting the intermediate certificates from the signed bundle..."
-		sed -e '0,/-----END CERTIFICATE-----/d' < "${SRC}" > "${SSL_CA_INT}" || fail "Failed to extract the intermediate CAs from the signed bundle (rc=${?})"
-		PUBLIC_FILES+=( "${SSL_CA_INT}" )
-		ok "Intermediates ready!"
-		install_chain "${OS_SSL_ANCHORS}/ca-int" "${OS_SSL_SUFFIX}" < "${SSL_CA_INT}" || fail "Failed to install the certificate chain from [${SSL_CA_INT}]"
-	fi
+	# Don't keep anything from a run that didn't finish
+	rm -f "${SSL_CA_INT}" || fail "Failed to remove the stale intermediates at [${SSL_CA_INT}] (rc=${?})"
+
+	# Whatever follows the first certificate is an intermediate
+	[ "$(grep -c -- "-----END CERTIFICATE-----" "${SSL_CERTIFICATE}")" -gt 1 ] || return 0
+
+	say "📂 Extracting the intermediate certificates from the bundle..."
+	sed -e '0,/-----END CERTIFICATE-----/d' < "${SSL_CERTIFICATE}" > "${SSL_CA_INT}" || fail "Failed to extract the intermediate CAs from the bundle (rc=${?})"
+	PUBLIC_FILES+=( "${SSL_CA_INT}" )
+	ok "Intermediates ready!"
+
+	# The certificate is either validated or just issued by now, so they're safe to trust
+	install_chain "${OS_SSL_ANCHORS}/ca-int" "${OS_SSL_SUFFIX}" < "${SSL_CA_INT}" || fail "Failed to install the certificate chain from [${SSL_CA_INT}]"
 	return 0
 }
 
@@ -804,8 +912,26 @@ render_encrypted_key()
 	return 0
 }
 
+adopt_certificate()
+{
+	# Don't call these in an || or && list, since that would disable set -e within them
+	test_certificate "${SSL_PROVIDED_CERTIFICATE}" "${SSL_PROVIDED_PRIVATE_KEY}" "${SSL_PROVIDED_CA_ROOT}" "${OS_SSL_CA_TRUSTS}" || fail "The certificate (SSL_PROVIDED_CERTIFICATE), private key (SSL_PROVIDED_PRIVATE_KEY) and root CA (SSL_PROVIDED_CA_ROOT) provided can't be used"
+	ok "The certificate at [${SSL_PROVIDED_CERTIFICATE}] is valid and trusted"
+
+	say "💾 Copying the certificate, private key and root CA into [${SSL_DIR}]..."
+	cp -f "${SSL_PROVIDED_CERTIFICATE}" "${SSL_CERTIFICATE}" || fail "Failed to copy the certificate to [${SSL_CERTIFICATE}] (rc=${?})"
+	PUBLIC_FILES+=( "${SSL_CERTIFICATE}" )
+	cp -f "${SSL_PROVIDED_PRIVATE_KEY}" "${SSL_PRIVATE_KEY}" || fail "Failed to copy the private key to [${SSL_PRIVATE_KEY}] (rc=${?})"
+	cp -f "${SSL_PROVIDED_CA_ROOT}" "${SSL_CA_ROOT}" || fail "Failed to copy the root CA to [${SSL_CA_ROOT}] (rc=${?})"
+	PUBLIC_FILES+=( "${SSL_CA_ROOT}" )
+
+	render_certificate_files
+	return 0
+}
+
 generate_certificate()
 {
+	download_issuer_trusts
 
 	#
 	# If we weren't given a certificate, then we must create our own
@@ -820,52 +946,51 @@ generate_certificate()
 	compute_certificate_san
 
 	# Don't call these in an || or && list, since that would disable set -e within them
-	local CMD="generate_java"
-	as_boolean "${KEYTOOL}" || CMD="generate_pem"
-	"${CMD}"
+	generate_pem
+	render_certificate_files
+	return 0
+}
 
-	install_intermediates "${SSL_CERTIFICATE}"
-
+render_certificate_files()
+{
+	# Everything else derives from the certificate and key, regardless of where they came from
+	install_intermediates
 	render_encrypted_key
 
 	local OUT=""
 
 	say "📜 Rendering the certificate files for HAProxy..."
-	OUT="$( (cat "${SSL_CERTIFICATE}" "${SSL_CA_ROOT}" "${SSL_PRIVATE_KEY}" > "${SSL_CERTIFICATE_HAPROXY}") 2>&1)" \
+	OUT="$( (cat "${SSL_CERTIFICATE}" "${SSL_PRIVATE_KEY}" > "${SSL_CERTIFICATE_HAPROXY}") 2>&1)" \
 		&& ok "HAProxy certificate ready!" \
 		|| fail "Failed to generate the HAProxy certificate"
 
+	# The chain always has the root CA, preceded by the intermediates (if any)
 	local LIST=()
-	for C in "${SSL_CA_INT}" "${SSL_CA_ROOT}" ; do
-		is_file_readable "${C}" && LIST+=( "${C}" )
-	done
+	is_file_readable "${SSL_CA_INT}" && LIST+=( "${SSL_CA_INT}" )
+	LIST+=( "${SSL_CA_ROOT}" )
 
-	if [ ${#LIST[@]} -gt 0 ] ; then
-		say "📜 Rendering the CA chain certifiate..."
-		OUT="$( (cat "${LIST[@]}" > "${SSL_CA_CHAIN}") 2>&1)" \
-			&& PUBLIC_FILES+=( "${SSL_CA_CHAIN}" ) \
-			&& ok "CA chain generated!" \
-			|| fail "Failed to generate the CA chain (rc=${?}): ${OUT}"
-	fi
+	say "📜 Rendering the CA chain certifiate..."
+	OUT="$( (cat "${LIST[@]}" > "${SSL_CA_CHAIN}") 2>&1)" \
+		&& PUBLIC_FILES+=( "${SSL_CA_CHAIN}" ) \
+		&& ok "CA chain generated!" \
+		|| fail "Failed to generate the CA chain (rc=${?}): ${OUT}"
+
+	render_java
 
 	# The certificate is ready, so its variables may now be published
 	SSL_ENV_FILE_VARS+=( "${CERT_ENV_FILE_VARS[@]}" )
 	JAVAX_NET_SSL_OPTS+=( "${JAVAX_NET_SSL_KEY_OPTS[@]}" )
 
-	ok "Certificate generation complete!"
+	ok "The certificate is ready!"
 	return 0
 }
 
-generate_java()
+render_java()
 {
 	as_boolean "${KEYTOOL}" || return 0
-	say "🔐 Rendering a ${JAVA_KEYSTORE_TYPE} Keystore with the new certificate & key..."
+	say "🔐 Rendering a ${JAVA_KEYSTORE_TYPE} Keystore with the certificate & key..."
 
-	# By now we have a private key in plaintext, and a certificate. At this point
-	# we can turn those two into a keystore that includes the private key and
-	# the certificate, and import it into our keystore.
-
-	export JAVA_KEY_ALIAS="acme"
+	export JAVA_KEY_ALIAS="default"
 	export JAVA_KEY_PASSWORD="${JAVA_KEYSTORE_PASSWORD}"
 	export JAVA_KEY_PASSWORD_FILE="${JAVA_KEYSTORE_PASSWORD_FILE}"
 	export SSL_CERTIFICATE_TOMCAT="${SSL_DIR}/tomcat-${SSL_CERTIFICATE##*/}"
@@ -883,79 +1008,11 @@ generate_java()
 		-Djavax.net.ssl.keyPassword='${JAVA_KEY_PASSWORD}'
 	)
 
-	KT_SAN=""
-	[ "${#SAN[@]}" -gt 0 ] && say "📝 Rendering certificate for the following SANs:"
-	while read S ; do
-		say "\t${S}"
-		is_valid_ipv4 "${S}" && TYPE="ip" || TYPE="dns"
-		[ -n "${KT_SAN}" ] && KT_SAN+=","
-		KT_SAN+="${TYPE}:${S}"
-	done < <(echo "${SAN[@]}" | tr '[:space:]' '\n' | sed -e '/^\s*$/d' | sort -u)
-	[ -n "${KT_SAN}" ] && KT_SAN=(-ext "san=${KT_SAN}") || KT_SAN=()
-
-	# First, generate the certificate key
-	say "🔑 Generating the certificate key..."
-	local CMD=()
-	CMD=(
-		keytool -genkey
-			-alias "${JAVA_KEY_ALIAS}"
-			-dname "CN=${FQDN}"
-			-keyalg RSA
-			-keypass:file "${JAVA_KEY_PASSWORD_FILE}"
-			-keysize 2048
-			-keystore "${JAVA_KEYSTORE}"
-			-storetype "${JAVA_KEYSTORE_TYPE}"
-			-storepass:file "${JAVA_KEYSTORE_PASSWORD_FILE}"
-			-startdate "-90m"
-			-validity 548
-			"${KT_SAN[@]}"
-			"${KEYTOOL_PROVIDER_FLAGS[@]}"
-	)
-	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to generate the ${JAVA_KEYSTORE_TYPE} keystore (rc=${?}): ${OUT}"
-	ok "The key is ready!"
-
-	# Generate the CSR
-	say "✍ Generating the certificate signing request..."
-	CSR="$(mktemp --tmpdir="${SSL_DIR}" .csr.XXXXXXXX)" || fail "Failed to create a temporary CSR file"
-	GARBAGE+=( "${CSR}" )
-	CMD=(
-		keytool -certreq
-			-alias "${JAVA_KEY_ALIAS}"
-			-file "${CSR}"
-			-keystore "${JAVA_KEYSTORE}"
-			-keypass:file "${JAVA_KEY_PASSWORD_FILE}"
-			-storetype "${JAVA_KEYSTORE_TYPE}"
-			-storepass:file "${JAVA_KEYSTORE_PASSWORD_FILE}"
-			"${KT_SAN[@]}"
-			"${KEYTOOL_PROVIDER_FLAGS[@]}"
-	)
-	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to generate the CSR (rc=${?}): ${OUT}"
-	ok "The request is ready!"
-
-	# Get the CSR signed
-	say "🔎︎ Submitting the certificate signing request..."
-	CMD=(
-		step ca sign "${CSR}" "${SSL_CERTIFICATE}"
-		--force
-		--not-before="-1h30m"
-		--provisioner-password-file "${ACME_PASSWORD_FILE}"
-		--password-file="${SSL_PASSWORD_FILE}"
-	)
-	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to get the certificate signature (rc=${?}): ${OUT}"
-	PUBLIC_FILES+=( "${SSL_CERTIFICATE}" )
+	local OUT=""
 
 	say "🔓 Creating the simplified Tomcat Certificate..."
-	CMD=(cp "${SSL_CERTIFICATE}" "${SSL_CERTIFICATE_TOMCAT}")
-	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to create a copy of the SSL Certificate for Tomcat use (rc=${?}): ${OUT}"
+	OUT="$( (sed -n -e '/-----BEGIN CERTIFICATE-----/,$p' -e '/^-\+END CERTIFICATE-\+$/q' "${SSL_CERTIFICATE}" > "${SSL_CERTIFICATE_TOMCAT}") 2>&1)" || fail "Failed to create a copy of the SSL Certificate for Tomcat use (rc=${?}): ${OUT}"
 	PUBLIC_FILES+=( "${SSL_CERTIFICATE_TOMCAT}" )
-
-	say "\t...sanitize the Tomcat Certificate"
-	CMD=(
-		sed -n -i
-			-e '/-----BEGIN CERTIFICATE-----/,$p' -e '/^-\+END CERTIFICATE-\+$/q'
-			"${SSL_CERTIFICATE_TOMCAT}"
-	)
-	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to sanitize the SSL Certificate for Tomcat use (rc=${?}): ${OUT}"
 	ok "Tomcat Certificate ready!"
 
 	set_as_boolean SSL_DH_APPEND "false"
@@ -967,102 +1024,57 @@ generate_java()
 		( echo "" ; cat "${SSL_DIR}/dh.pem" ) >> "${SSL_CERTIFICATE_TOMCAT}" || fail "Failed to append the DH parameters to the certifiate"
 		ok "DH parameters appended!"
 	fi
-	ok "The certificate was signed!"
 
-	# We import the signers as well
-	say "🔓 Importing the signed certificate into the keystore..."
-	CMD=(
-		keytool -import
-			-alias "${JAVA_KEY_ALIAS}"
-			-file "${SSL_CERTIFICATE}"
-			-keystore "${JAVA_KEYSTORE}"
-			-noprompt
-			-storetype "${JAVA_KEYSTORE_TYPE}"
-			-storepass:file "${JAVA_KEYSTORE_PASSWORD_FILE}"
-			"${KEYTOOL_PROVIDER_FLAGS[@]}"
-	)
-	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to import the signed certificate into the keystore (rc=${?}): ${OUT}"
-	ok "The keystore is ready!"
-
-	# Export the private key as PKCS#12 so it can be dumped
-	# to PEM format using OpenSSL commands, which in turn
-	# makes it readable by processes using OpenSSL
-	say "🔑 Extracting the private key into a PEM-encoded file"
-	TEMP_KEYSTORE="$(mktemp --tmpdir="${SSL_DIR}" ".temp-keystore-XXXXXXXX.pkcs12")"
-	say "\t...create a temporary keystore"
-	# We need to nuke it, otherwise keytool will complain
-	rm -f "${TEMP_KEYSTORE}" &>/dev/null || true
-	GARBAGE+=( "${TEMP_KEYSTORE}" )
-	# Providers may be blanked out, in which case keytool must choose them
-	local PROVIDER_FLAGS=()
-	[ -n "${JAVA_KEYSTORE_PROVIDER}" ] && PROVIDER_FLAGS+=( -srcprovidername "${JAVA_KEYSTORE_PROVIDER}" )
-	CMD=(
-		keytool -importkeystore
-			-destalias "${JAVA_KEY_ALIAS}"
-			-destkeypass:file "${JAVA_KEY_PASSWORD_FILE}"
-			-destkeystore "${TEMP_KEYSTORE}"
-			-deststorepass:file "${JAVA_KEYSTORE_PASSWORD_FILE}"
-			-deststoretype "PKCS12"
-			-destprovidername "SUN"
-			-noprompt
-			-srcalias "${JAVA_KEY_ALIAS}"
-			-srckeypass:file "${JAVA_KEY_PASSWORD_FILE}"
-			-srckeystore "${JAVA_KEYSTORE}"
-			-srcstorepass:file "${JAVA_KEYSTORE_PASSWORD_FILE}"
-			-srcstoretype "${JAVA_KEYSTORE_TYPE}"
-			"${PROVIDER_FLAGS[@]}"
-			"${KEYTOOL_PROVIDER_FLAGS[@]}"
-	)
-	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to export the private key to the temporary keystore (rc=${?}): ${OUT}"
-
-	# Spit out the plaintext private key
-	say "\t...extract the plaintext key"
-	CMD=(
-		openssl pkcs12
-			-in "${TEMP_KEYSTORE}"
-			-noenc
-			-nocerts
-			-nomacver
-			-passin "file:${JAVA_KEYSTORE_PASSWORD_FILE}"
-			-out "${SSL_PRIVATE_KEY}"
-	)
-	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to extract the private key from the temporary keystore (rc=${?}): ${OUT}"
-
-	# Sanitize the private key to remove any extraneous text
-	say "\t...sanitize the temporary file"
-	CMD=(
-		sed -n -i
-			-e '/-----BEGIN PRIVATE KEY-----/,$p' -e '/^-\+END PRIVATE KEY-\+$/q'
-			"${SSL_PRIVATE_KEY}"
-	)
-	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to sanitize the private key (rc=${?}): ${OUT}"
-
-	# Convert the key to PKCS#1 for consistency with the keys generated by step-ca, since
-	# some programs (i.e. RustFS) only accept that format. This only re-encodes the key's
-	# ASN.1 structure, so no cryptographic operations are involved
-	say "\t...convert to PKCS#1"
-	local PKCS1_KEY=""
-	PKCS1_KEY="$(mktemp --tmpdir="${SSL_DIR}" ".pkcs1-key-XXXXXXXX.pem")" || fail "Failed to create a temporary file for the PKCS#1 key"
-	GARBAGE+=( "${PKCS1_KEY}" )
-	CMD=(
-		openssl pkey
-			-in "${SSL_PRIVATE_KEY}"
-			-traditional
-			-out "${PKCS1_KEY}"
-	)
-	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to convert the private key to PKCS#1 (rc=${?}): ${OUT}"
-	OUT="$(mv -f "${PKCS1_KEY}" "${SSL_PRIVATE_KEY}" 2>&1)" || fail "Failed to replace the private key with its PKCS#1 version (rc=${?}): ${OUT}"
-	ok "Private key extracted!"
+	render_keystore
 
 	ok "Java Keystore Ready!"
 	return 0
 }
 
+render_keystore()
+{
+	################################################################################
+	#
+	# Keytool can't import a private key from a PEM file, and the only thing it can
+	# import one from is a keystore. Under FIPS, OpenSSL can't render a PKCS#12 MAC,
+	# can't be relied on for the key's salt size (see render_encrypted_key), and the
+	# JDK ignores the keys in unencrypted keystores. Thus, the key goes directly into
+	# the keystore using keystore-tool, with the same provider that keytool would
+	# use, so it's stored the same way.
+	#
+	# The entry's chain is the bundle itself (i.e. the certificate and its intermediates).
+	#
+	################################################################################
+	type -P java &>/dev/null || fail "Found keytool, but not java, so the keystore can't be rendered"
+	is_file_readable "${KEYSTORE_TOOL}" || fail "The keystore tool [${KEYSTORE_TOOL}] is required to render the keystore, but it's missing"
+	say "🔑 Importing the certificate & key into the keystore..."
+
+	local OUT=""
+
+	# Providers may be blanked out, in which case the JVM must choose them
+	local PROVIDER_FLAGS=()
+	[ -n "${JAVA_KEYSTORE_PROVIDER}" ] && PROVIDER_FLAGS+=( --provider-name "${JAVA_KEYSTORE_PROVIDER}" )
+	[ -n "${JAVA_KEYSTORE_PROVIDER_CLASS}" ] && PROVIDER_FLAGS+=( --provider-class "${JAVA_KEYSTORE_PROVIDER_CLASS}" )
+	[ -n "${JAVA_KEYSTORE_PROVIDER_ARGS}" ] && PROVIDER_FLAGS+=( --provider-arg "${JAVA_KEYSTORE_PROVIDER_ARGS}" )
+	[ -n "${JAVA_KEYSTORE_PROVIDER_PATH}" ] && PROVIDER_FLAGS+=( --provider-classpath "${JAVA_KEYSTORE_PROVIDER_PATH}" )
+
+	local CMD=(
+		java -jar "${KEYSTORE_TOOL}"
+			--type "${JAVA_KEYSTORE_TYPE}"
+			--key "${SSL_PRIVATE_KEY}"
+			--cert "${SSL_CERTIFICATE}"
+			--out "${JAVA_KEYSTORE}"
+			--password-file "${JAVA_KEY_PASSWORD_FILE}"
+			--alias "${JAVA_KEY_ALIAS}"
+			"${PROVIDER_FLAGS[@]}"
+	)
+	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to render the ${JAVA_KEYSTORE_TYPE} keystore (rc=${?}): ${OUT}"
+	ok "The keystore is ready!"
+	return 0
+}
+
 generate_pem()
 {
-	########################################
-	# No Java, use OpenSSL only
-	########################################
 	# Make sure our SAN list is unique, and
 	# sorted, and pre-pend the --san argument
 	SAN_ARG=()
@@ -1105,8 +1117,6 @@ update_trusts()
 	# in a subshell, so the relaxed umask only applies to the update command
 	OUT="$(umask 0022 && execute "${OS_SSL_UPDATE_CMD[@]}" 2>&1)" || fail "Failed to update the CA trusts (rc=${?}): ${OUT}"
 	ok "CA trusts updated system-wide!"
-
-	import_java_trusts
 	return 0
 }
 
@@ -1133,6 +1143,40 @@ import_java_trusts()
 	OUT="$("${CMD[@]}" 2>&1)" || fail "Could not append the global trusts from [${JAVA_GLOBAL_TRUSTSTORE}] (rc=${?}): ${OUT}"
 	PUBLIC_FILES+=( "${JAVA_KEYSTORE}" )
 	ok "Global trusts added!"
+	return 0
+}
+
+validate_java_trusts()
+{
+	as_boolean "${KEYTOOL}" || return 0
+	say "🔎 Checking that the ${JAVA_TRUSTSTORE_TYPE} truststore at [${JAVA_TRUSTSTORE}] trusts the root CA..."
+
+	# Compare the fingerprints, since different CAs may share the same name
+	local FINGERPRINT=""
+	FINGERPRINT="$(openssl x509 -noout -fingerprint -sha256 -in "${SSL_CA_ROOT}" 2>&1)" || fail "Failed to compute the fingerprint for the root CA at [${SSL_CA_ROOT}] (rc=${?}): ${FINGERPRINT}"
+	FINGERPRINT="${FINGERPRINT#*=}"
+
+	# The truststore may not be the keystore, so these can't be taken from KEYTOOL_PROVIDER_FLAGS
+	local PROVIDER_FLAGS=()
+	if [ -n "${JAVA_TRUSTSTORE_PROVIDER_CLASS}" ] ; then
+		PROVIDER_FLAGS+=( -providerclass "${JAVA_TRUSTSTORE_PROVIDER_CLASS}" )
+	elif [ -n "${JAVA_TRUSTSTORE_PROVIDER}" ] ; then
+		PROVIDER_FLAGS+=( -addprovider "${JAVA_TRUSTSTORE_PROVIDER}" )
+	fi
+	[ "${#PROVIDER_FLAGS[@]}" -gt 0 ] && [ -n "${JAVA_TRUSTSTORE_PROVIDER_ARGS}" ] && PROVIDER_FLAGS+=( -providerarg "${JAVA_TRUSTSTORE_PROVIDER_ARGS}" )
+	[ -n "${JAVA_TRUSTSTORE_PROVIDER_PATH}" ] && PROVIDER_FLAGS+=( -providerpath "${JAVA_TRUSTSTORE_PROVIDER_PATH}" )
+
+	local OUT=""
+	local CMD=(
+		keytool -list
+			-keystore "${JAVA_TRUSTSTORE}"
+			-storetype "${JAVA_TRUSTSTORE_TYPE}"
+			-storepass:file "${JAVA_TRUSTSTORE_PASSWORD_FILE}"
+			"${PROVIDER_FLAGS[@]}"
+	)
+	OUT="$("${CMD[@]}" 2>&1)" || fail "Failed to list the contents of the truststore at [${JAVA_TRUSTSTORE}] (rc=${?}): ${OUT}"
+	grep -qF -- "${FINGERPRINT}" <<< "${OUT}" || fail "The root CA at [${SSL_CA_ROOT}] (SHA-256: ${FINGERPRINT}) isn't in the truststore at [${JAVA_TRUSTSTORE}]"
+	ok "The root CA is in the truststore!"
 	return 0
 }
 
@@ -1341,6 +1385,9 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 	################################################################################
 	await_if_necessary
 
+	# Where the certificate comes from depends on whether one was provided
+	select_certificate_source
+
 	# This array will contain the list of (absolute) paths for all
 	# files whose permissions will be relaxed so they may be read
 	# by everyone. All other files will only be readable by their
@@ -1352,9 +1399,18 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 
 	initialize
 	download_trusts
-	download_issuer_trusts
-	generate_certificate
+
+	if as_boolean "${CERTIFICATE_PROVIDED}" ; then
+		# It must be trusted by the final trusts, so this goes first
+		update_trusts
+		adopt_certificate
+	else
+		generate_certificate
+	fi
+
 	update_trusts
+	import_java_trusts
+	validate_java_trusts
 	finalize_java_variables
 	relax_permissions
 
