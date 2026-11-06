@@ -177,9 +177,11 @@ RUN --mount=type=bind,target=/src \
     ( cd /src/core/root && tar --owner=root --group=root --mode=u=rwX,go=rX -cf - . ) | tar -C / -xvf - && \
     ( cd /src/scripts && tar --owner=root --group="${ACM_GROUP}" --mode=u=rwX,g=rX,o= -cf - . ) | tar -C /usr/local/bin -xvf - && \
     sed -e "s;\${ACM_GROUP};${ACM_GROUP};g" < /src/00-ssl-init > /etc/sudoers.d/00-ssl-init && \
+    chmod 0440 /etc/sudoers.d/00-ssl-init && \
     mkdir -p "${BASE_DIR}" "${CONF_DIR}" "${DATA_DIR}" "${LOGS_DIR}" "${TEMP_DIR}" && \
     chmod -R ug=rwX,o= "${TEMP_DIR}" && \
     ( cd /scripts && tar --owner=root --group=root --mode=u=rwX,go=rX -cf - . ) | tar -C / -xvf - && \
+    chmod 0444 /.functions && \
     mkdir -p "${CURL_HOME}" && \
     cp /src/curlrc "${CURL_HOME}/.curlrc" && \
     chown -R root:root "${CURL_HOME}" && \

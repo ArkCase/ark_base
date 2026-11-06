@@ -42,7 +42,7 @@ export CURL_HOME="/etc/curl"
 # Set some defaults
 #
 set_or_default BASE_DIR "/app"
-set_or_default FIPS_DIR "${BASE_DIR}/fips"
+set_or_default FIPS_DIR "/usr/local/lib/fips"
 set_or_default KEYSTORE_TOOL "/usr/local/bin/keystore-tool.jar"
 
 export DEFAULT_JAVA_SSL_KEYSTORE_TYPE="BCFKS"
@@ -602,6 +602,13 @@ initialize_password()
 	fi
 
 	export SSL_PASSWORD="$(<"${SSL_PASSWORD_FILE}")"
+
+	# In FIPS mode, Bouncy Castle won't run PBKDF2 (which decrypts the private key) with
+	# passwords shorter than 112 bits, so catch that here instead of when Tomcat starts
+	if as_boolean "${FIPS}" ; then
+		local LENGTH="$(LC_ALL=C ; echo "${#SSL_PASSWORD}")"
+		[ ${LENGTH} -ge 14 ] || fail "FIPS mode requires an SSL password of at least 14 bytes (112 bits), but it's only ${LENGTH} bytes long"
+	fi
 	return 0
 }
 
@@ -902,8 +909,18 @@ render_encrypted_key()
 	say "🔒 Creating a PKCS#8 encrypted version of the key (PBES2 with AES-256-CBC)..."
 
 	local ARGS=( SSL_PASSWORD )
+
+	# If not given, pkcs8-encrypt uses aes-crypt's number of iterations
 	set_or_default SSL_PBKDF2_ITERATIONS
-	[ -n "${SSL_PBKDF2_ITERATIONS}" ] && ARGS+=( "${SSL_PBKDF2_ITERATIONS}" )
+	if [ -n "${SSL_PBKDF2_ITERATIONS}" ] ; then
+		[[ "${SSL_PBKDF2_ITERATIONS}" =~ ^[1-9][0-9]*$ ]] || fail "The number of PBKDF2 iterations [${SSL_PBKDF2_ITERATIONS}] must be a positive integer"
+
+		# Neither OpenSSL nor Bouncy Castle will run PBKDF2 with fewer iterations in FIPS mode
+		if as_boolean "${FIPS}" && [ ${SSL_PBKDF2_ITERATIONS} -lt 1000 ] ; then
+			fail "FIPS mode requires at least 1000 PBKDF2 iterations (SSL_PBKDF2_ITERATIONS=${SSL_PBKDF2_ITERATIONS})"
+		fi
+		ARGS+=( "${SSL_PBKDF2_ITERATIONS}" )
+	fi
 
 	local OUT=""
 	OUT="$( { openssl pkcs8 -topk8 -nocrypt -outform DER -in "${SSL_PRIVATE_KEY}" | pkcs8-encrypt "${ARGS[@]}" > "${SSL_PRIVATE_KEY_ENCRYPTED}" ; } 2>&1 )" || fail "Failed to render the encrypted key at [${SSL_PRIVATE_KEY_ENCRYPTED}] (rc=${?}): ${OUT}"
@@ -1180,11 +1197,68 @@ validate_java_trusts()
 	return 0
 }
 
+render_java_ssl_args()
+{
+	#
+	# Renders every option in JAVAX_NET_SSL_OPTS into the Java argument file at
+	# JAVA_SSL_ARGS (i.e. java "@${JAVA_SSL_ARGS}" ...)
+	#
+	# The messages only show the options' templates, since their values may be passwords
+	local OPT=""
+	local VALUE=""
+	local ARGS=()
+	for OPT in "${JAVAX_NET_SSL_OPTS[@]}" ; do
+		VALUE="$(envsubst <<< "${OPT}")" || fail "Failed to expand the Java SSL option [${OPT}] (rc=${?})"
+		ARGS+=( "${VALUE}" )
+	done
+	render_ssl_java_args "${JAVA_SSL_ARGS}" "${ARGS[@]}" || fail "Failed to render the Java SSL argument file at [${JAVA_SSL_ARGS}] (rc=${?})"
+	return 0
+}
+
+#
+# usage: render_ssl_java_args FILE ARGUMENT...
+#
+# Renders the given JVM arguments (i.e. -Dsome.password=...) into the Java
+# argument file FILE, one per line, so they may be passed as java "@${FILE}"
+# without exposing their values on the command line. FILE is replaced, and
+# only its owner may read it.
+#
+# Here it renders JAVA_SSL_ARGS. It's also published in the environment file (only
+# if Java is present), so it's available to whoever sources it (i.e. after init_ssl),
+# since the arguments will normally be built from the SSL environment variables.
+#
+render_ssl_java_args()
+{
+	[ ${#} -ge 2 ] || { err "usage: render_ssl_java_args FILE ARGUMENT..." ; return 1 ; }
+	local FILE="${1}"
+	shift
+	[ -n "${FILE}" ] || { err "The Java argument file may not be the empty string" ; return 1 ; }
+
+	# The file is written in full before it's moved into place, so it's never seen
+	# partially rendered. The temporary file is only accessible by its owner (0600)
+	local TEMP=""
+	TEMP="$(mktemp -p "$(dirname "${FILE}")" ".${FILE##*/}.XXXXXXXX")" || return ${?}
+
+	# Each argument is quoted, so backslashes, quotes, and newlines must be escaped
+	local ARG=""
+	for ARG in "${@}" ; do
+		ARG="${ARG//\\/\\\\}"
+		ARG="${ARG//\"/\\\"}"
+		ARG="${ARG//$'\n'/\\n}"
+		echo "\"${ARG}\""
+	done > "${TEMP}" && mv -f "${TEMP}" "${FILE}" && return 0
+
+	local RC=${?}
+	rm -f "${TEMP}" &>/dev/null
+	return ${RC}
+}
+
 finalize_java_variables()
 {
 	as_boolean "${KEYTOOL}" || return 0
 
-	# These two go last b/c they'll be the biggest and baddest, so the file is easier to read
+	# These go last b/c they'll be the biggest and baddest, so the file is easier to read
+	SSL_ENV_FILE_VARS+=( JAVA_SSL_ARGS )
 	SSL_ENV_FILE_VARS+=( JAVAX_NET_SSL_OPTIONS )
 	SSL_ENV_FILE_VARS+=( JAVA_KEYTOOL_PROVIDER_FLAGS )
 
@@ -1195,9 +1269,25 @@ finalize_java_variables()
 	export JAVA_KEYTOOL_PROVIDER_FLAGS="${KEYTOOL_PROVIDER_FLAGS[*]}"
 
 	#
-	# Render the final JVM options consuming all the above variables
+	# The argument file carries all the options, passwords included, so that
+	# java "@${JAVA_SSL_ARGS}" keeps the passwords off the command line
 	#
-	export JAVAX_NET_SSL_OPTIONS="$(echo -n "${JAVAX_NET_SSL_OPTS[@]}" | envsubst)"
+	say "📝 Rendering the Java SSL argument file..."
+	export JAVA_SSL_ARGS="${SSL_DIR}/.java-args"
+	render_java_ssl_args
+	ok "The Java SSL argument file is ready!"
+
+	#
+	# Render the final JVM options consuming all the above variables. The
+	# passwords are replaced by the argument file, which also carries them
+	#
+	local OPT=""
+	local OPTS=()
+	for OPT in "${JAVAX_NET_SSL_OPTS[@]}" ; do
+		[[ "${OPT}" == -Djavax.net.ssl.*Password=* ]] || OPTS+=( "${OPT}" )
+	done
+	OPTS+=( '@${JAVA_SSL_ARGS}' )
+	export JAVAX_NET_SSL_OPTIONS="$(echo -n "${OPTS[@]}" | envsubst)"
 	return 0
 }
 
@@ -1289,6 +1379,16 @@ finalize()
 				echo "# ${VAR} was undefined"
 			fi
 		done
+		if as_boolean "${KEYTOOL:-false}" ; then
+			echo ""
+			echo "#"
+			echo "# usage: render_ssl_java_args FILE ARGUMENT..."
+			echo "#"
+			echo "# Renders the given JVM arguments into the Java argument file FILE"
+			echo "# (see ssl-init for the details)"
+			echo "#"
+			declare -f render_ssl_java_args
+		fi
 		echo ""
 		echo "#"
 		echo "# End of the SSL environment variable definitions"
@@ -1348,7 +1448,8 @@ set_or_default SSL_TRUSTS_DIR "/.trusts"
 	[ -v SUDO_USER ] && KEY_OWNER="${SUDO_USER}" || KEY_OWNER="root"
 
 	#
-	# Find the Java keytool, if it's installed
+	# Java is present if its keytool is installed. This is only computed once,
+	# and governs all the Java stuff (including what goes into the environment file)
 	#
 	type -P keytool &>/dev/null && KEYTOOL="true" || KEYTOOL="false"
 
