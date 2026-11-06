@@ -1278,16 +1278,9 @@ finalize_java_variables()
 	ok "The Java SSL argument file is ready!"
 
 	#
-	# Render the final JVM options consuming all the above variables. The
-	# passwords are replaced by the argument file, which also carries them
+	# The final JVM options are just the argument file, since it carries them all
 	#
-	local OPT=""
-	local OPTS=()
-	for OPT in "${JAVAX_NET_SSL_OPTS[@]}" ; do
-		[[ "${OPT}" == -Djavax.net.ssl.*Password=* ]] || OPTS+=( "${OPT}" )
-	done
-	OPTS+=( '@${JAVA_SSL_ARGS}' )
-	export JAVAX_NET_SSL_OPTIONS="$(echo -n "${OPTS[@]}" | envsubst)"
+	export JAVAX_NET_SSL_OPTIONS="@${JAVA_SSL_ARGS}"
 	return 0
 }
 
