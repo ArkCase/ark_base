@@ -93,6 +93,8 @@ LABEL VERSION="${VER}"
 ARG BASE_DIR="/app"
 ENV BASE_DIR="${BASE_DIR}"
 ENV TEMP_DIR="${BASE_DIR}/temp"
+ENV TEMP="${TEMP_DIR}"
+ENV TMP="${TEMP_DIR}"
 ENV DATA_DIR="${BASE_DIR}/data"
 ENV CONF_DIR="${BASE_DIR}/conf"
 ENV LOGS_DIR="${BASE_DIR}/logs"
@@ -179,7 +181,7 @@ RUN --mount=type=bind,target=/src \
     sed -e "s;\${ACM_GROUP};${ACM_GROUP};g" < /src/00-ssl-init > /etc/sudoers.d/00-ssl-init && \
     chmod 0440 /etc/sudoers.d/00-ssl-init && \
     mkdir -p "${BASE_DIR}" "${CONF_DIR}" "${DATA_DIR}" "${LOGS_DIR}" "${TEMP_DIR}" && \
-    chmod -R ug=rwX,o= "${TEMP_DIR}" && \
+    chmod -R u=rwX,g=rX,o= "${TEMP_DIR}" && \
     ( cd /scripts && tar --owner=root --group=root --mode=u=rwX,go=rX -cf - . ) | tar -C / -xvf - && \
     chmod 0444 /.functions && \
     mkdir -p "${CURL_HOME}" && \
