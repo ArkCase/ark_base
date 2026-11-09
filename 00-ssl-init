@@ -13,7 +13,6 @@ Defaults!SSL_INIT env_keep += "BASE_DIR"
 Defaults!SSL_INIT env_keep += "FIPS_DIR"
 Defaults!SSL_INIT env_keep += "K8S_CA"
 Defaults!SSL_INIT env_keep += "SSL_DIR"
-Defaults!SSL_INIT env_keep += "SSL_ENV_FILE"
 Defaults!SSL_INIT env_keep += "SSL_TRUSTS_DIR"
 
 # The certificate, its key, and the key's password
