@@ -176,13 +176,13 @@ RUN --mount=type=bind,target=/src \
     chown -R "${DEF_USER}:${DEF_GROUP}" "${APP_ROOT}" "${HOME}" && \
     chmod -R u=rwX,g=rX,o=X "${APP_ROOT}" "${HOME}" && \
     groupadd --gid "${ACM_GID}" "${ACM_GROUP}" && \
-    ( cd /src/core/root && tar --owner=root --group=root --mode=u=rwX,go=rX -cf - . ) | tar -C / -xvf - && \
-    ( cd /src/scripts && tar --owner=root --group="${ACM_GROUP}" --mode=u=rwX,g=rX,o= -cf - . ) | tar -C /usr/local/bin -xvf - && \
+    /scripts/usr/local/bin/copy-tree -v -o root -g root -m u=rwX,go=rX /src/core/root/ / && \
+    /scripts/usr/local/bin/copy-tree -v -o root -g "${ACM_GROUP}" -m u=rwX,g=rX,o= /src/scripts/ /usr/local/bin && \
     sed -e "s;\${ACM_GROUP};${ACM_GROUP};g" < /src/00-ssl-init > /etc/sudoers.d/00-ssl-init && \
     chmod 0440 /etc/sudoers.d/00-ssl-init && \
     mkdir -p "${BASE_DIR}" "${CONF_DIR}" "${DATA_DIR}" "${LOGS_DIR}" "${TEMP_DIR}" && \
     chmod -R u=rwX,g=rX,o= "${TEMP_DIR}" && \
-    ( cd /scripts && tar --owner=root --group=root --mode=u=rwX,go=rX -cf - . ) | tar -C / -xvf - && \
+    /scripts/usr/local/bin/copy-tree -v -o root -g root -m u=rwX,go=rX /scripts/ / && \
     chmod 0444 /.functions && \
     mkdir -p "${CURL_HOME}" && \
     cp /src/curlrc "${CURL_HOME}/.curlrc" && \
